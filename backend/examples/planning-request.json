@@ -1,0 +1,51 @@
+{
+  "scenario_name": "One-period hand-check",
+  "quantity_unit": "case",
+  "time_unit": "day",
+  "currency_unit": "INR",
+  "periods": [1],
+  "suppliers": [
+    {
+      "id": "S1",
+      "capacity_per_period": 10,
+      "unit_purchase_cost": 2
+    }
+  ],
+  "warehouses": [
+    {
+      "id": "W1",
+      "storage_capacity": 10,
+      "opening_inventory": 0,
+      "holding_cost_per_unit_period": 0
+    }
+  ],
+  "stores": [
+    {
+      "id": "D1",
+      "demand_by_period": {
+        "1": 5
+      }
+    }
+  ],
+  "supplier_to_warehouse": [
+    {
+      "supplier_id": "S1",
+      "warehouse_id": "W1",
+      "unit_shipping_cost": 0.5,
+      "lead_time_periods": 0
+    }
+  ],
+  "warehouse_to_store": [
+    {
+      "warehouse_id": "W1",
+      "store_id": "D1",
+      "unit_shipping_cost": 0.25
+    }
+  ],
+  "allow_unmet_demand": false,
+  "terminal_inventory": {
+    "mode": "none",
+    "minimum_by_warehouse": {}
+  },
+  "solver_time_limit_seconds": 30
+}

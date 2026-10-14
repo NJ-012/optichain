@@ -1,0 +1,6 @@
+{
+  "name": "OptiChain - Integrated Supply Chain & Last-Mile Optimization",
+  "description": "Enterprise logistics control tower for multi-period inventory replenishment, transportation allocation, and last-mile vehicle routing optimization powered by Google OR-Tools.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

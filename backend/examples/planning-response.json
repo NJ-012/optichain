@@ -1,0 +1,121 @@
+{
+  "scenario_name": "One-period hand-check",
+  "status": "OPTIMAL",
+  "status_message": "Optimal solution found.",
+  "objective_value": 13.75,
+  "quantity_unit": "case",
+  "time_unit": "day",
+  "currency_unit": "INR",
+  "procurement": [
+    {
+      "supplier_id": "S1",
+      "period": 1,
+      "quantity": 5.0
+    }
+  ],
+  "supplier_to_warehouse_shipments": [
+    {
+      "supplier_id": "S1",
+      "warehouse_id": "W1",
+      "dispatch_period": 1,
+      "arrival_period": 1,
+      "quantity": 5.0
+    }
+  ],
+  "warehouse_to_store_shipments": [
+    {
+      "warehouse_id": "W1",
+      "store_id": "D1",
+      "period": 1,
+      "quantity": 5.0
+    }
+  ],
+  "ending_inventory": [
+    {
+      "warehouse_id": "W1",
+      "period": 1,
+      "ending_inventory": 0.0
+    }
+  ],
+  "unmet_demand": [
+    {
+      "store_id": "D1",
+      "period": 1,
+      "unmet_quantity": 0.0
+    }
+  ],
+  "cost_breakdown": {
+    "procurement": 10.0,
+    "supplier_to_warehouse_transport": 2.5,
+    "warehouse_to_store_transport": 1.25,
+    "holding": 0.0,
+    "shortage": 0.0,
+    "total": 13.75
+  },
+  "constraint_residuals": [
+    {
+      "name": "supplier_capacity_S1_p1",
+      "lhs": 5.0,
+      "sense": "<=",
+      "rhs": 10.0,
+      "violation": 0.0
+    },
+    {
+      "name": "storage_capacity_W1_p1",
+      "lhs": 0.0,
+      "sense": "<=",
+      "rhs": 10.0,
+      "violation": 0.0
+    },
+    {
+      "name": "inventory_balance_W1_p1",
+      "lhs": 0.0,
+      "sense": "=",
+      "rhs": 0.0,
+      "violation": 0.0
+    },
+    {
+      "name": "demand_fulfillment_D1_p1",
+      "lhs": 5.0,
+      "sense": "=",
+      "rhs": 5.0,
+      "violation": 0.0
+    },
+    {
+      "name": "nonnegative_in_S1_W1_p1",
+      "lhs": 5.0,
+      "sense": ">=",
+      "rhs": 0.0,
+      "violation": 0.0
+    },
+    {
+      "name": "nonnegative_out_W1_D1_p1",
+      "lhs": 5.0,
+      "sense": ">=",
+      "rhs": 0.0,
+      "violation": 0.0
+    },
+    {
+      "name": "nonnegative_inv_W1_p1",
+      "lhs": 0.0,
+      "sense": ">=",
+      "rhs": 0.0,
+      "violation": 0.0
+    },
+    {
+      "name": "nonnegative_short_D1_p1",
+      "lhs": 0.0,
+      "sense": ">=",
+      "rhs": 0.0,
+      "violation": 0.0
+    }
+  ],
+  "max_constraint_violation": 0.0,
+  "solver_runtime_ms": 1.243799925,
+  "diagnostics": [
+    "Purchasing cost is charged once on supplier-to-warehouse dispatch quantity; it is not charged again on receipt or delivery.",
+    "Warehouse storage capacity applies to ending inventory after same-period receipts and deliveries.",
+    "Lead time is measured in positions of the supplied planning-period sequence. Dispatches arriving after the horizon are excluded.",
+    "Infeasibility diagnostics describe the whole model only; they do not claim a unique root cause."
+  ]
+}
