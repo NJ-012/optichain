@@ -226,8 +226,8 @@ export const DataManagementView: React.FC<DataManagementViewProps> = ({
 
       {/* 1. Suppliers Tab */}
       {activeSubTab === 'suppliers' && (
-        <div className="bg-slate-900 border border-slate-800 rounded overflow-x-auto">
-          <div className="p-3 border-b border-slate-800 flex items-center justify-between">
+        <div className="bg-slate-900 border border-slate-800 rounded min-w-0 data-table-scroll">
+          <div className="p-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-xs font-bold text-white uppercase tracking-wider">
               Supplier Master Records
             </h3>
@@ -268,36 +268,42 @@ export const DataManagementView: React.FC<DataManagementViewProps> = ({
                     <div className="text-[10px] text-slate-400">{s.id}</div>
                   </td>
                   <td className="py-2 px-3">
-                    <input
-                      type="number"
-                      value={s.capacity_per_period}
-                      onChange={(e) =>
-                        updateSupplier(s.id, 'capacity_per_period', Number(e.target.value))
-                      }
-                      className="w-24 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
-                    />
-                    <span className="ml-1 text-slate-400">units</span>
+                    <div className="data-field-group">
+                      <input
+                        type="number"
+                        value={s.capacity_per_period}
+                        onChange={(e) =>
+                          updateSupplier(s.id, 'capacity_per_period', Number(e.target.value))
+                        }
+                        className="w-24 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
+                      />
+                      <span className="text-slate-400">units</span>
+                    </div>
                   </td>
                   <td className="py-2 px-3">
-                    <span className="text-slate-400">₹</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={s.unit_cost}
-                      onChange={(e) => updateSupplier(s.id, 'unit_cost', Number(e.target.value))}
-                      className="w-20 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
-                    />
+                    <div className="data-field-group">
+                      <span className="text-slate-400">₹</span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={s.unit_cost}
+                        onChange={(e) => updateSupplier(s.id, 'unit_cost', Number(e.target.value))}
+                        className="w-20 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
+                      />
+                    </div>
                   </td>
                   <td className="py-2 px-3">
-                    <input
-                      type="number"
-                      value={s.lead_time_periods}
-                      onChange={(e) =>
-                        updateSupplier(s.id, 'lead_time_periods', Number(e.target.value))
-                      }
-                      className="w-16 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
-                    />
-                    <span className="ml-1 text-slate-400">periods</span>
+                    <div className="data-field-group">
+                      <input
+                        type="number"
+                        value={s.lead_time_periods}
+                        onChange={(e) =>
+                          updateSupplier(s.id, 'lead_time_periods', Number(e.target.value))
+                        }
+                        className="w-16 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
+                      />
+                      <span className="text-slate-400">periods</span>
+                    </div>
                   </td>
                   <td className="py-2 px-3">
                     <div className="flex gap-1">
@@ -315,8 +321,8 @@ export const DataManagementView: React.FC<DataManagementViewProps> = ({
 
       {/* 2. Warehouses Tab */}
       {activeSubTab === 'warehouses' && (
-        <div className="bg-slate-900 border border-slate-800 rounded overflow-x-auto">
-          <div className="p-3 border-b border-slate-800 flex items-center justify-between">
+        <div className="bg-slate-900 border border-slate-800 rounded min-w-0 data-table-scroll">
+          <div className="p-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-xs font-bold text-white uppercase tracking-wider">
               Warehouse & Fulfillment Facilities
             </h3>
@@ -357,42 +363,48 @@ export const DataManagementView: React.FC<DataManagementViewProps> = ({
                     <div className="text-[10px] text-slate-400">{w.id}</div>
                   </td>
                   <td className="py-2 px-3">
-                    <input
-                      type="number"
-                      value={w.max_storage_capacity}
-                      onChange={(e) =>
-                        updateWarehouse(w.id, 'max_storage_capacity', Number(e.target.value))
-                      }
-                      className="w-24 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
-                    />
-                    <span className="ml-1 text-slate-400">units</span>
+                    <div className="data-field-group">
+                      <input
+                        type="number"
+                        value={w.max_storage_capacity}
+                        onChange={(e) =>
+                          updateWarehouse(w.id, 'max_storage_capacity', Number(e.target.value))
+                        }
+                        className="w-24 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
+                      />
+                      <span className="text-slate-400">units</span>
+                    </div>
                   </td>
                   <td className="py-2 px-3">
-                    <input
-                      type="number"
-                      value={w.initial_inventory}
-                      onChange={(e) =>
-                        updateWarehouse(w.id, 'initial_inventory', Number(e.target.value))
-                      }
-                      className="w-20 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
-                    />
-                    <span className="ml-1 text-slate-400">units</span>
+                    <div className="data-field-group">
+                      <input
+                        type="number"
+                        value={w.initial_inventory}
+                        onChange={(e) =>
+                          updateWarehouse(w.id, 'initial_inventory', Number(e.target.value))
+                        }
+                        className="w-20 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
+                      />
+                      <span className="text-slate-400">units</span>
+                    </div>
                   </td>
                   <td className="py-2 px-3">
-                    <span className="text-slate-400">₹</span>
-                    <input
-                      type="number"
-                      step="0.05"
-                      value={w.holding_cost_per_unit_period}
-                      onChange={(e) =>
-                        updateWarehouse(
-                          w.id,
-                          'holding_cost_per_unit_period',
-                          Number(e.target.value)
-                        )
-                      }
-                      className="w-20 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
-                    />
+                    <div className="data-field-group">
+                      <span className="text-slate-400">₹</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        value={w.holding_cost_per_unit_period}
+                        onChange={(e) =>
+                          updateWarehouse(
+                            w.id,
+                            'holding_cost_per_unit_period',
+                            Number(e.target.value)
+                          )
+                        }
+                        className="w-20 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
+                      />
+                    </div>
                   </td>
                   <td className="py-2 px-3">
                     <div className="flex gap-1">
@@ -410,8 +422,8 @@ export const DataManagementView: React.FC<DataManagementViewProps> = ({
 
       {/* 3. Demand Zones Tab */}
       {activeSubTab === 'demands' && (
-        <div className="bg-slate-900 border border-slate-800 rounded overflow-x-auto">
-          <div className="p-3 border-b border-slate-800 flex items-center justify-between">
+        <div className="bg-slate-900 border border-slate-800 rounded min-w-0 data-table-scroll">
+          <div className="p-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-xs font-bold text-white uppercase tracking-wider">
               Urban Demand Zones & Retail Store Fulfillment Demands
             </h3>
@@ -450,15 +462,17 @@ export const DataManagementView: React.FC<DataManagementViewProps> = ({
                   </td>
                   {request.periods.map((period) => (
                     <td key={period} className="py-2 px-3">
-                      <input
-                        aria-label={`${z.name} period ${period} demand`}
-                        type="number"
-                        min="0"
-                        value={z.demands[period] ?? 0}
-                        onChange={(e) => updateDemand(z.id, period, Number(e.target.value))}
-                        className="w-20 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
-                      />
-                      <span className="ml-1 text-slate-400">units</span>
+                      <div className="data-field-group">
+                        <input
+                          aria-label={`${z.name} period ${period} demand`}
+                          type="number"
+                          min="0"
+                          value={z.demands[period] ?? 0}
+                          onChange={(e) => updateDemand(z.id, period, Number(e.target.value))}
+                          className="w-20 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
+                        />
+                        <span className="text-slate-400">units</span>
+                      </div>
                     </td>
                   ))}
                   <td className="py-2 px-3 text-slate-300 font-bold tabular-nums">
@@ -480,8 +494,8 @@ export const DataManagementView: React.FC<DataManagementViewProps> = ({
 
       {/* 4. Vehicles & Fleet Tab */}
       {activeSubTab === 'vehicles' && (
-        <div className="bg-slate-900 border border-slate-800 rounded overflow-x-auto">
-          <div className="p-3 border-b border-slate-800 flex items-center justify-between">
+        <div className="bg-slate-900 border border-slate-800 rounded min-w-0 data-table-scroll">
+          <div className="p-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-xs font-bold text-white uppercase tracking-wider">
               Last-Mile Vehicle Fleet & Rider Assignments
             </h3>
@@ -545,44 +559,52 @@ export const DataManagementView: React.FC<DataManagementViewProps> = ({
                     </select>
                   </td>
                   <td className="py-2 px-3">
-                    <input
-                      type="number"
-                      value={v.capacity}
-                      onChange={(e) => updateVehicle(v.id, 'capacity', Number(e.target.value))}
-                      className="w-20 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
-                    />
-                    <span className="ml-1 text-slate-400">units</span>
+                    <div className="data-field-group">
+                      <input
+                        type="number"
+                        value={v.capacity}
+                        onChange={(e) => updateVehicle(v.id, 'capacity', Number(e.target.value))}
+                        className="w-20 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
+                      />
+                      <span className="text-slate-400">units</span>
+                    </div>
                   </td>
                   <td className="py-2 px-3">
-                    <span className="text-slate-400">₹</span>
-                    <input
-                      type="number"
-                      value={v.fixed_cost}
-                      onChange={(e) => updateVehicle(v.id, 'fixed_cost', Number(e.target.value))}
-                      className="w-16 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
-                    />
+                    <div className="data-field-group">
+                      <span className="text-slate-400">₹</span>
+                      <input
+                        type="number"
+                        value={v.fixed_cost}
+                        onChange={(e) => updateVehicle(v.id, 'fixed_cost', Number(e.target.value))}
+                        className="w-16 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
+                      />
+                    </div>
                   </td>
                   <td className="py-2 px-3">
-                    <input
-                      type="number"
-                      min="0"
-                      value={v.max_range_km}
-                      onChange={(e) => updateVehicle(v.id, 'max_range_km', Number(e.target.value))}
-                      className="w-20 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
-                    />
-                    <span className="ml-1 text-slate-400">km</span>
+                    <div className="data-field-group">
+                      <input
+                        type="number"
+                        min="0"
+                        value={v.max_range_km}
+                        onChange={(e) => updateVehicle(v.id, 'max_range_km', Number(e.target.value))}
+                        className="w-20 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
+                      />
+                      <span className="text-slate-400">km</span>
+                    </div>
                   </td>
                   <td className="py-2 px-3">
-                    <span className="text-slate-400">₹</span>
-                    <input
-                      type="number"
-                      step="0.05"
-                      value={v.variable_cost_per_km}
-                      onChange={(e) =>
-                        updateVehicle(v.id, 'variable_cost_per_km', Number(e.target.value))
-                      }
-                      className="w-16 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
-                    />
+                    <div className="data-field-group">
+                      <span className="text-slate-400">₹</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        value={v.variable_cost_per_km}
+                        onChange={(e) =>
+                          updateVehicle(v.id, 'variable_cost_per_km', Number(e.target.value))
+                        }
+                        className="w-16 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-right text-slate-200"
+                      />
+                    </div>
                   </td>
                   <td className="py-2 px-3"><button aria-label={`Remove ${v.name}`} onClick={() => setRequest((prev) => ({ ...prev, vehicles: prev.vehicles.filter((item) => item.id !== v.id) }))} className="text-rose-500"><Trash2 size={15} /></button></td>
                 </tr>

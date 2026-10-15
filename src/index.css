@@ -39,7 +39,8 @@
 .app-shell .panel-title { font-size:14px; font-weight:650; letter-spacing:-.01em; }
 .app-shell .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
 .app-shell label:not(.check-row):not(.theme-select-wrap) { display:flex; flex-direction:column; gap:7px; font-size:12px; font-weight:600; color:var(--muted); }
-.app-shell input:not([type=checkbox]), .app-shell select, .app-shell textarea { width:100%; border:1px solid var(--border); background:var(--canvas); color:var(--text); border-radius:6px; padding:10px 11px; font-size:13px; outline:none; }
+.app-shell input:not([type=checkbox]), .app-shell select, .app-shell textarea { box-sizing:border-box; min-width:0; border:1px solid var(--border); background:var(--canvas); color:var(--text); border-radius:6px; padding:10px 11px; font-size:13px; outline:none; }
+.app-shell label:not(.check-row):not(.theme-select-wrap) > input:not([type=checkbox]),.app-shell label:not(.check-row):not(.theme-select-wrap) > select,.app-shell label:not(.check-row):not(.theme-select-wrap) > textarea { width:100%; }
 .app-shell input:focus,.app-shell select:focus,.app-shell textarea:focus { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent); }
 .app-shell .btn-primary,.app-shell .btn-secondary { display:inline-flex; align-items:center; justify-content:center; gap:8px; border-radius:6px; padding:9px 12px; font-weight:600; border:1px solid transparent; cursor:pointer; }
 .app-shell .btn-primary { background:var(--accent-strong); color:white; }
@@ -52,9 +53,18 @@
 .app-shell .metric-tile { border:1px solid var(--border); background:var(--surface-2); border-radius:7px; padding:14px; display:flex; flex-direction:column; gap:8px; }
 .app-shell .metric-tile span { color:var(--muted); font-size:11px; }
 .app-shell .metric-tile strong { font-size:24px; font-weight:650; }
-.app-shell .table-wrap { overflow:auto; border:1px solid var(--border); border-radius:7px; }
-.app-shell table { width:100%; border-collapse:collapse; font-size:12px; }
-.app-shell th,.app-shell td { padding:10px 12px; border-bottom:1px solid var(--border); text-align:left; white-space:nowrap; }
+.app-shell main > .flex-1 { min-width:0; }
+.app-shell .table-wrap,.app-shell .data-table-scroll { max-width:100%; overflow-x:auto; overflow-y:hidden; }
+.app-shell .table-wrap { border:1px solid var(--border); border-radius:7px; }
+.app-shell table { width:100%; min-width:max-content; table-layout:auto; border-collapse:separate; border-spacing:0; font-size:12px; }
+.app-shell th,.app-shell td { padding:10px 12px; border-bottom:1px solid var(--border); text-align:left; }
+.app-shell th { white-space:nowrap; }
+.app-shell td { white-space:nowrap; }
+.app-shell td input:not([type=checkbox]),.app-shell td select { box-sizing:border-box; width:100%; min-width:0; }
+.app-shell .data-table-scroll td > .flex { min-width:12rem; }
+.app-shell .data-table-scroll .data-field-group { display:flex; align-items:center; gap:4px; min-width:8rem; }
+.app-shell .data-table-scroll .data-field-group input { flex:1; }
+.app-shell .wrap-cell { max-width:24rem; white-space:normal; overflow-wrap:anywhere; }
 .app-shell th { color:var(--muted); background:var(--surface-2); font-weight:600; }
 .app-shell tr:last-child td { border-bottom:0; }
 .app-shell .check-row { display:flex; flex-direction:row!important; align-items:flex-start; gap:10px; border:1px solid var(--border); border-radius:7px; padding:13px; }

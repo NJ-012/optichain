@@ -270,7 +270,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             <td>{quantity(route.total_quantity_delivered)} / {quantity(route.vehicle_capacity)}</td>
                             <td>{route.total_distance_km.toLocaleString('en-IN')} km / {route.max_range_km.toLocaleString('en-IN')} km</td>
                             <td>{currency(route.total_cost)}</td>
-                            <td>{route.stops.filter((stop) => stop.location_type === 'demand_zone').map((stop) => `${stop.location_name} (${quantity(stop.quantity_delivered)})`).join('; ') || '—'}</td>
+                            <td className="wrap-cell">{route.stops.filter((stop) => stop.location_type === 'demand_zone').map((stop) => `${stop.location_name} (${quantity(stop.quantity_delivered)})`).join('; ') || '—'}</td>
                           </tr>
                         ))}
                       </tbody>
