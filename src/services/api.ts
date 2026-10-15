@@ -3,13 +3,15 @@ import {
   OptimizationRequest,
   OptimizationResponse,
   OptimizationStatus,
+  PlannedDelivery,
   PeriodInventoryPlan,
+  RoutingSolverStatus,
   TransportationAllocation,
   VehicleRouteSolution,
 } from '../types/domain';
 import { INITIAL_PRODUCT_INFO } from '../data/initialScope';
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+export const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8000';
 const FREIGHT_RATE_PER_UNIT_KM = 0.85;
 const FLOW_TOLERANCE = 1e-5;
 
@@ -134,6 +136,9 @@ interface BaselineResponse {
 }
 
 interface RoutingResponse {
+  status: 'FEASIBLE' | 'NO_SOLUTION';
+  status_message: string;
+  solver_runtime_ms: number;
   routes: VehicleRouteSolution[];
 }
 
@@ -196,6 +201,7 @@ export async function executeOptimization(
   request: OptimizationRequest,
   apiBaseUrl: string = API_BASE_URL,
 ): Promise<OptimizationResponse> {
+  const executionStarted = performance.now();
   const planningRequest = toPlanningRequest(request);
   const planning = await fetchJson<PlanningResponse>(
     `${apiBaseUrl}/api/v1/supply-chain/optimize`,
@@ -210,6 +216,10 @@ export async function executeOptimization(
 
   const routes: VehicleRouteSolution[] = [];
   const routingWarnings: string[] = [];
+  let routingFailed = false;
+  let routingNoSolution = false;
+  let routingApiError = false;
+  let routingSolveSucceeded = false;
   if (planning.status === 'OPTIMAL' || planning.status === 'FEASIBLE') {
     const routeJobs = request.periods.flatMap((period) =>
       request.warehouses
@@ -225,6 +235,7 @@ export async function executeOptimization(
             (vehicle) => vehicle.is_active && vehicle.warehouse_id === warehouse.id,
           );
           if (vehicles.length === 0) {
+            routingNoSolution = true;
             routingWarnings.push(
               `No active vehicles are assigned to ${warehouse.name}; ${plannedQuantity.toFixed(3)} planned units were not routed in period ${period}.`,
             );
@@ -239,6 +250,7 @@ export async function executeOptimization(
               demands: { [period]: demandByStore.get(zone.id) ?? 0 },
               is_active: true,
             }));
+          let noSolutionForJob = false;
           try {
             const response = await fetchJson<RoutingResponse>(
               `${apiBaseUrl}/api/optimize/vrp?period=${encodeURIComponent(period)}`,
@@ -257,18 +269,49 @@ export async function executeOptimization(
             if (!Array.isArray(response.routes)) {
               throw new BackendApiError('The routing API returned an invalid routes payload.');
             }
+            if (response.status === 'NO_SOLUTION') {
+              noSolutionForJob = true;
+              throw new BackendApiError(response.status_message || 'The routing solver returned no solution.');
+            }
+            if (response.status !== 'FEASIBLE' || !Number.isFinite(response.solver_runtime_ms)) {
+              throw new BackendApiError('The routing API returned an invalid solver status or runtime.');
+            }
+            routingSolveSucceeded = true;
             const routedQuantity = response.routes.reduce(
               (sum, route) => sum + route.total_quantity_delivered,
               0,
             );
             const capacityViolation = response.routes.find(
-              (route) => route.total_quantity_delivered > route.vehicle_capacity + FLOW_TOLERANCE,
+              (route) =>
+                route.total_quantity_delivered > route.vehicle_capacity + FLOW_TOLERANCE ||
+                route.total_distance_km > route.max_range_km + FLOW_TOLERANCE,
             );
             if (capacityViolation) {
               routingWarnings.push(
-                `Routing API returned a capacity violation for ${capacityViolation.vehicle_name} in period ${period}.`,
+                `Routing API returned a payload or distance violation for ${capacityViolation.vehicle_name} in period ${period}.`,
               );
+              routingFailed = true;
               return [];
+            }
+            const plannedByStore = new Map(deliveries.map((delivery) => [delivery.store_id, delivery.quantity]));
+            const routedByStore = new Map<string, number>();
+            for (const route of response.routes) {
+              const stopQuantity = route.stops.reduce((sum, stop) => {
+                if (stop.location_type !== 'demand_zone') return sum;
+                routedByStore.set(
+                  stop.location_id,
+                  (routedByStore.get(stop.location_id) ?? 0) + stop.quantity_delivered,
+                );
+                return sum + stop.quantity_delivered;
+              }, 0);
+              if (Math.abs(stopQuantity - route.total_quantity_delivered) > FLOW_TOLERANCE) {
+                throw new BackendApiError('The routing API returned route totals that do not match its delivery stops.');
+              }
+            }
+            if ([...routedByStore].some(
+              ([storeId, quantity]) => quantity > (plannedByStore.get(storeId) ?? 0) + FLOW_TOLERANCE,
+            )) {
+              throw new BackendApiError('The routing API returned more units for a store than the LP planned.');
             }
             if (Math.abs(routedQuantity - plannedQuantity) > FLOW_TOLERANCE) {
               routingWarnings.push(
@@ -277,6 +320,9 @@ export async function executeOptimization(
             }
             return response.routes;
           } catch (error) {
+            routingFailed = true;
+            if (noSolutionForJob) routingNoSolution = true;
+            else routingApiError = true;
             routingWarnings.push(
               `${warehouse.name} period ${period} routing failed: ${errorMessage(error)}`,
             );
@@ -288,7 +334,22 @@ export async function executeOptimization(
     routes.push(...routeResults.flat());
   }
 
-  return mapPlanningResponse(request, planning, routes, routingWarnings);
+  const routingSolverStatus: RoutingSolverStatus = routingApiError
+    ? 'API_ERROR'
+    : routingSolveSucceeded
+      ? 'FEASIBLE'
+      : routingNoSolution
+        ? 'NO_SOLUTION'
+        : 'NOT_RUN';
+  return mapPlanningResponse(
+    request,
+    planning,
+    routes,
+    routingWarnings,
+    performance.now() - executionStarted,
+    routingFailed,
+    routingSolverStatus,
+  );
 }
 
 export async function executeBaselinePolicy(
@@ -389,6 +450,9 @@ function mapPlanningResponse(
   planning: PlanningResponse,
   routes: VehicleRouteSolution[],
   routingWarnings: string[],
+  executionTimeMs = planning.solver_runtime_ms,
+  routingFailed = false,
+  routingSolverStatus: RoutingSolverStatus = 'NOT_RUN',
 ): OptimizationResponse {
   const supplierById = new Map(request.suppliers.map((supplier) => [supplier.id, supplier]));
   const warehouseById = new Map(request.warehouses.map((warehouse) => [warehouse.id, warehouse]));
@@ -494,11 +558,71 @@ function mapPlanningResponse(
           }),
       )
     : [];
+  const storeById = new Map(request.demand_zones.map((store) => [store.id, store]));
+  const plannedDeliveries: PlannedDelivery[] = feasible
+    ? planning.warehouse_to_store_shipments
+        .filter((delivery) => delivery.quantity > FLOW_TOLERANCE)
+        .map((delivery) => {
+          const store = storeById.get(delivery.store_id);
+          if (!store) {
+            throw new BackendApiError('The planning API returned a delivery with an unknown demand zone.');
+          }
+          return {
+            period: delivery.period,
+            warehouse_id: delivery.warehouse_id,
+            store_id: delivery.store_id,
+            store_name: store.name,
+            quantity: delivery.quantity,
+          };
+        })
+    : [];
 
+  const plannedDeliveryUnits = feasible
+    ? planning.warehouse_to_store_shipments.reduce((sum, row) => sum + row.quantity, 0)
+    : 0;
+  const routedDeliveryUnits = feasible
+    ? routes.reduce((sum, route) => sum + route.total_quantity_delivered, 0)
+    : 0;
+  const planningShortageUnits = feasible
+    ? planning.unmet_demand.reduce((sum, row) => sum + row.unmet_quantity, 0)
+    : 0;
+  const routingUnservedUnits = feasible
+    ? Math.max(0, plannedDeliveryUnits - routedDeliveryUnits)
+    : 0;
+  const demandUnits = request.demand_zones
+    .filter((zone) => zone.is_active)
+    .reduce(
+      (sum, zone) =>
+        sum + request.periods.reduce((periodSum, period) => periodSum + (zone.demands[period] ?? 0), 0),
+      0,
+    );
   const unmetDemand = feasible
-    ? planning.unmet_demand
-        .filter((row) => row.unmet_quantity > FLOW_TOLERANCE)
-        .map((row) => [`${row.store_id}_P${row.period}`, row.unmet_quantity] as const)
+    ? request.demand_zones
+        .filter((zone) => zone.is_active)
+        .flatMap((zone) =>
+          request.periods.flatMap((period) => {
+            const demand = zone.demands[period] ?? 0;
+            const routedQuantity = routes.reduce(
+              (sum, route) =>
+                sum +
+                (route.period === period
+                  ? route.stops.reduce(
+                      (stopSum, stop) =>
+                        stopSum +
+                        (stop.location_type === 'demand_zone' && stop.location_id === zone.id
+                          ? stop.quantity_delivered
+                          : 0),
+                      0,
+                    )
+                  : 0),
+              0,
+            );
+            const unmet = Math.max(0, demand - routedQuantity);
+            return unmet > FLOW_TOLERANCE
+              ? [[`${zone.id}_P${period}`, unmet] as const]
+              : [];
+          }),
+        )
     : [];
   const routingCost = routes.reduce((sum, route) => sum + route.total_cost, 0);
   const totalCost = feasible ? planning.cost_breakdown.total + routingCost : 0;
@@ -517,14 +641,23 @@ function mapPlanningResponse(
     ...planning.diagnostics,
   ];
 
-  const routingComplete = routingWarnings.length === 0;
-  const overallStatus: OptimizationStatus = feasible && !routingComplete ? 'FEASIBLE' : planning.status;
-  const overallStatusMessage = feasible && !routingComplete
+  const routingStatus = !feasible
+    ? 'NOT_RUN'
+    : routingFailed
+      ? 'FAILED'
+      : routingWarnings.length > 0
+        ? 'INCOMPLETE'
+        : 'COMPLETE';
+  const overallStatus: OptimizationStatus = feasible && routingStatus !== 'COMPLETE' ? 'FEASIBLE' : planning.status;
+  const overallStatusMessage = feasible && routingStatus !== 'COMPLETE'
     ? 'The replenishment LP solved, but the end-to-end plan needs attention because last-mile routing is incomplete or could not be fully validated.'
     : planning.status_message;
   return {
     scenario_name: planning.scenario_name,
     status: overallStatus,
+    planning_status: planning.status,
+    routing_status: routingStatus,
+    routing_solver_status: routingSolverStatus,
     status_message: overallStatusMessage,
     objective_value: planning.objective_value,
     total_cost: totalCost,
@@ -538,7 +671,17 @@ function mapPlanningResponse(
     shortage_penalty_cost: feasible ? planning.cost_breakdown.shortage : 0,
     allocations,
     inventory_plans: inventoryPlans,
+    planned_deliveries: plannedDeliveries,
     vehicle_routes: feasible ? routes : [],
+    demand_units: demandUnits,
+    planned_delivery_units: plannedDeliveryUnits,
+    routed_delivery_units: routedDeliveryUnits,
+    planning_shortage_units: planningShortageUnits,
+    routing_unserved_units: routingUnservedUnits,
+    unserved_units: feasible ? Math.max(0, demandUnits - routedDeliveryUnits) : demandUnits,
+    quantity_unit: planning.quantity_unit,
+    currency_unit: planning.currency_unit,
+    execution_time_ms: executionTimeMs,
     diagnostics: {
       is_feasible: feasible,
       solver_status: overallStatus,
@@ -590,6 +733,17 @@ function validatePlanningResponse(
     response.objective_value == null
   ) {
     throw new BackendApiError('The optimization API returned a feasible status without an objective value.');
+  }
+  if (
+    (response.status === 'OPTIMAL' || response.status === 'FEASIBLE') &&
+    response.objective_value != null &&
+    response.cost_breakdown &&
+    Math.abs(response.objective_value - response.cost_breakdown.total) >
+      Math.max(1e-5, Math.abs(response.objective_value) * 1e-8)
+  ) {
+    throw new BackendApiError(
+      'The planning API objective does not reconcile with its reported cost breakdown.',
+    );
   }
 }
 

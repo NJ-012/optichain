@@ -1,74 +1,37 @@
-# OptiChain — Supply Chain Planning and Last-Mile Routing
+# OptiChain — OR-based Supply-Chain Planning
 
-> **Release note:** This bundle adds the New Optimization Plan workflow, local draft/workspace persistence, Light/Dark/System theme selection, CSV file/paste import with row validation for suppliers/warehouses/demand zones/vehicles, JSON solution export, restricted configurable CORS, security headers, Docker assets, and Windows launch scripts. See [ENTERPRISE_READINESS.md](./ENTERPRISE_READINESS.md) for run instructions, model boundaries, and production blockers.
+OptiChain is a React/TypeScript application backed by FastAPI and Google OR-Tools. Edit a supply-chain problem, validate and solve it with the backend, inspect LP and vehicle-routing results, understand the formulation, and export the current run as Excel-compatible CSV.
 
+All bundled suppliers, facilities, retailers, drivers, coordinates, and operating figures are fictional Pune/PCMC demo data. They are not live business data.
 
-OptiChain is a React/TypeScript control-tower UI backed by a FastAPI service.
-The editable initial data in `src/data/initialScope.ts` is a **synthetic
-benchmark**, not live business data. All optimization and scenario results shown
-by the UI come from backend API calls; there is no successful browser-side
-optimization fallback.
-The initial synthetic request permits penalized unmet demand because period-1
-demand exceeds opening inventory plus the only zero-lead-time supplier's
-available capacity; with shortages disabled, the planning LP correctly reports
-infeasibility.
+## User workflow
 
-## Authoritative workflow
+The application has three sections:
 
-1. The browser converts the legacy editable workspace shape to the versioned
-   planning contract and calls `POST /api/v1/supply-chain/optimize`.
-2. The Google OR-Tools GLOP LP jointly chooses supplier dispatch quantities,
-   warehouse inventory, store deliveries, and optional shortages over the
-   planning horizon.
-3. For feasible LP results, the browser calls the preserved
-   `POST /api/optimize/vrp` endpoint with the **actual planned delivery quantity
-   for each warehouse/store/period**. Routing is a separate CVRP solve and is
-   not jointly optimized with the LP.
-4. The UI distinguishes LP objective from total displayed planning-plus-route
-   costs. Routing shortfalls and API errors are shown rather than represented
-   as successful optimization results.
+1. **Problem Setup** — edit the planning horizon, supplier capacities/costs/lead times, warehouse inventory/storage/holding costs, store demand and coordinates, vehicle payload/range/costs/depot assignments, and shortage/fuel policy. Entities can be added, removed, or activated. Input validation is field-specific.
+2. **Results** — inspect planning and routing statuses separately; LP objective and combined LP-plus-route costs; demand, planned, routed, and unserved quantities; procurement, inventory, shortage, route tables, result-driven charts, and CSV export. Editing an input immediately makes prior results stale; stale results are not presented as current.
+3. **Model Explanation** — review sets, variables, objective, constraints, units, solver choices, and sequential LP/CVRP assumptions.
 
-The UI compatibility adapter uses the existing supplier and warehouse
-coordinates to calculate inbound lane cost using the previous documented
-tariff: haversine distance × `₹0.85 / product-unit-km` × fuel surcharge. Outbound lane
-cost in the LP is zero because last-mile cost is charged by the separate VRP;
-this avoids double-counting it. These are compatibility assumptions, not
-editable lane tariffs. Configure `VITE_API_BASE_URL` in `.env` to select the
-backend URL; it defaults to `http://localhost:8000`.
+The single primary action, **Validate and Solve**, calls the real FastAPI service. There is no browser optimization fallback or automatic startup solve. Planning API errors are shown. Routing API failures or partial routes preserve the LP result but mark the overall run for attention and report all quantities not physically routed as unserved.
 
-The planning endpoint's complete input/output contract, units, terminal stock,
-lead-time, shortage, and objective assumptions are documented in
-[`backend/README.md`](./backend/README.md). Interactive OpenAPI documentation
-is available at `http://localhost:8000/docs`.
+## Model and cost assumptions
 
-### Solver scope and known boundaries
+- One divisible product over a finite, ordered set of periods. The LP is continuous and solved with OR-Tools GLOP.
+- Supplier dispatch quantities obey each supplier's per-period capacity. Supplier lead time counts positions in the period list; beyond-horizon receipts are excluded. Procurement cost is charged at dispatch once.
+- Warehouse inventory is conserved each period: beginning stock + receipts arriving in the period − planned store deliveries = ending stock. Storage limits apply to ending stock.
+- Demand is either delivered by the LP or recorded as an explicit, demand-bounded shortage variable with its configured penalty. With shortage disabled, unmet demand makes the LP infeasible.
+- Supplier-to-warehouse freight is estimated from editable coordinates using haversine distance × ₹0.85 per product-unit-km × fuel multiplier. This legacy compatibility tariff is fixed, not an editable lane rate.
+- LP warehouse-to-store freight is zero in the compatibility adapter. Last-mile expense is calculated once in a separate post-planning OR-Tools vehicle-routing solve; the reported total is LP objective plus route cost, not a jointly globally optimal supply-chain plan.
+- Routing respects vehicle depot assignment, payload, and maximum route distance. The OR-Tools Routing search uses a time-limited guided-local-search heuristic and is not guaranteed globally optimal. If capacity, range, or search constraints leave some planned volume unrouted, actual routed deliveries and all unserved demand are reported separately; LP-planned volume is never counted as routed.
+- Routing deliveries are represented by indivisible visit nodes, so the model splits LP allocations into smaller visits (one quarter of the smallest active vehicle capacity) to reduce stranded payload. This is still a heuristic CVRP; coverage and the routing solver status are reported separately. The demo's two 160-unit Chakan vehicles can route at most 320 units in each period; remaining planned volume is reported as unrouted rather than delivered.
+- LP shortages and planned-but-unrouted units are separate. Only LP shortage variables incur the LP shortage penalty.
+- The UI does not currently configure terminal inventory targets, fixed-charge purchasing, supplier inventory, editable lane-specific rates, or multiple products.
 
-- One divisible product; continuous LP flows; finite ordered periods.
-- Per-period supplier capacities, explicit supplier-to-warehouse lanes and
-  lead times, warehouse capacity/holding costs, and store demand.
-- Purchasing cost is charged once on supplier dispatch. Dispatches arriving
-  beyond the planning horizon are excluded.
-- Optional shortage variables are bounded by demand and have an explicit
-  penalty. Terminal inventory is configured as none, zero, or a per-warehouse
-  minimum.
-- Last-mile routing runs after the LP and consumes its delivered quantities.
-  The reported route plan is not a joint LP/CVRP optimum. Route range and
-  vehicle payload are enforced; if all planned deliveries cannot be assigned,
-  the UI warns and does not claim they were routed. The VRP uses a
-  time-limited routing heuristic, so it may leave feasible fleet capacity
-  unused; reported routes are capacity-valid, but not proven optimal.
-- The service is stateless. Database persistence and a Dockerfile are not
-  implemented.
-
-The old integrated, transportation-only, and inventory-only HTTP solver
-endpoints are retired with HTTP 410 responses to prevent the UI or clients from
-silently using a different formulation. The separate routing endpoint remains
-available. Old internal solver modules/tests remain for legacy regression
-coverage and are not used by the integrated UI/API.
+The detailed planning API and units are documented in [`backend/README.md`](./backend/README.md). Interactive API documentation is served at `http://localhost:8000/docs`.
 
 ## Run locally (Windows PowerShell)
 
-Start the backend in one terminal:
+Start the API:
 
 ```powershell
 cd backend
@@ -78,38 +41,37 @@ python -m pip install -r requirements.txt
 python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Start the frontend in another terminal at the repository root:
+In a second terminal from the repository root:
 
 ```powershell
-npm install --no-package-lock
+npm ci
 node .\node_modules\vite\bin\vite.js --host 127.0.0.1 --port 3000
 ```
 
-Open `http://localhost:3000`. To point the browser at another backend, set
-`VITE_API_BASE_URL` in the root `.env` file before starting Vite; restart Vite
-after changing it.
+Open `http://localhost:3000`. The browser API origin defaults to `http://localhost:8000`. Copy `.env.example` to `.env`, set `VITE_API_BASE_URL` to the browser-reachable FastAPI origin, and restart Vite after changing it. `VITE_API_BASE_URL` is embedded at frontend build time.
 
-The commands above invoke Vite directly because this workspace path contains
-an ampersand, which Windows `npm run` command shims can misparse. In a path
-without `&`, `npm run dev`, `npm run build`, and `npm run lint` are equivalent.
+FastAPI permits local Vite origins by default. Set `CORS_ORIGINS` to a comma-separated list containing the exact deployed frontend origin (scheme and host, plus non-default port if applicable). For Docker Compose deployments, set both `VITE_API_BASE_URL` to the browser-reachable API address and `CORS_ORIGINS` to the deployed frontend origin before building/starting the stack.
 
-Run backend regression tests and compilation:
+## Tests and production build
+
+From the repository root:
 
 ```powershell
-cd backend
-python -m pytest tests -v
-python -m compileall -q main.py models solver tests
-```
-
-The frontend has no configured unit-test script. The TypeScript check and
-production build can be run directly with:
-
-```powershell
+python -m pytest backend\tests -v
+python -m compileall -q backend\main.py backend\models backend\solver backend\tests
+node --import tsx --test src/services/api.test.ts src/services/workflow.test.ts
 node .\node_modules\typescript\bin\tsc --noEmit
 node .\node_modules\vite\bin\vite.js build
 ```
 
+The backend tests cover LP feasibility, shortage penalties, capacity, lead times, inventory conservation, and CVRP constraints/partial routes. Frontend tests cover input validation, stale input fingerprints, API failures, route reconciliation, chart data, and CSV export.
 
-## India-grounded demonstration data
+## Container deployment
 
-The default workspace uses Indian rupees (₹), Indian number grouping, a Pune/PCMC dairy replenishment scenario, regional distribution hubs, sample retail outlets, and Indian commercial vehicle examples. All retailer, supplier, facility, driver, and operating figures in the bundled demo are fictional and intended for demonstration only; they do not represent actual company operations, quotes, or live market data.
+The root `docker-compose.yml` builds the FastAPI backend and Nginx-served frontend. Frontend URL configuration is passed through the `VITE_API_BASE_URL` build argument in [`Dockerfile.frontend`](./Dockerfile.frontend); backend CORS origins are supplied through `CORS_ORIGINS`.
+
+```powershell
+docker compose up --build
+```
+
+The default compose URLs target local development (`http://localhost:8000` API and port `3000` frontend). Override them for public deployment; browser JavaScript must be able to reach the configured API origin directly.

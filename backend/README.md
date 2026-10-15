@@ -1,77 +1,35 @@
 # OptiChain FastAPI / OR-Tools backend
 
-## Authoritative API
+## API
 
-- `GET /api/health` — Python, service, and OR-Tools health.
-- `POST /api/v1/supply-chain/optimize` — the authoritative single-product
-  multi-period transportation/inventory LP.
-- `POST /api/v1/supply-chain/baseline` — greedy baseline policy for comparison;
-  explicitly a heuristic, not guaranteed to find a feasible plan.
-- `POST /api/optimize/vrp?period={period}` — separate OR-Tools CVRP. The UI
-  calls this after a feasible LP and passes actual warehouse/store/period
-  delivery quantities. Returned routes enforce vehicle payload and maximum
-  route range. When fleet constraints prevent routing every stop, the solver
-  can return a subset; the UI compares route load to planned deliveries and
-  reports the unserved planned quantity.
+- `GET /api/health` reports Python, FastAPI, and OR-Tools health.
+- `POST /api/v1/supply-chain/optimize` solves the authoritative single-product, multi-period planning LP.
+- `POST /api/optimize/vrp?period={period}` runs a separate last-mile CVRP for a warehouse/period and its planned deliveries.
+- `POST /api/v1/supply-chain/baseline` runs a greedy reference heuristic. It is not the optimizer and is not used for the primary UI workflow.
 
-`/docs` serves generated OpenAPI documentation. The frontend converts its
-editable legacy workspace model to the planning request contract in
-`src/services/api.ts`, then converts API results to the UI's view model.
-Supplier-to-warehouse lane cost is derived from coordinates using the legacy
-tariff `haversine_km × ₹0.85/(unit-km) × fuel_surcharge_multiplier`.
-Warehouse-to-store lane cost is zero in the LP because vehicle routing costs
-are reported separately. These are compatibility defaults, not editable lane
-tariffs. Infeasible/error HTTP statuses and solver outcomes are displayed;
-there is no browser-side successful optimization fallback.
+The planning endpoint uses OR-Tools GLOP. For feasible planning results, the frontend submits planned delivery quantities to the CVRP endpoint. The two are sequential optimizations, not a joint global optimum. CVRP uses a 5-second guided-local-search heuristic. It splits demand into indivisible visit nodes sized at one quarter of the smallest active vehicle capacity to reduce payload waste, but remains heuristic and may be partial. The response includes routing status, status message, runtime in milliseconds, and the legacy `routes` array. Its returned routes are validated against requested deliveries, vehicle payloads, and route-distance limits; any missing volume is reported as unrouted and is not claimed as fulfilled. CVRP route cost is separate from the LP objective.
 
-The former `POST /api/optimize/integrated`, `/api/optimize/transportation`,
-and `/api/optimize/inventory` solvers are retired and return HTTP 410; their
-older internal modules remain only for legacy regression coverage. The
-deprecated `GET /api/scenarios/baseline` returns the old input schema. No
-database persistence or Docker deployment is implemented.
+The old integrated, transportation-only, and inventory-only endpoints return HTTP 410 to prevent clients from silently using a different formulation. The service is stateless. Root-level Docker Compose builds the API and frontend; production `CORS_ORIGINS` must include the exact browser-visible frontend origin.
 
-## Planning LP model and units
+## Planning model and units
 
-Input/output schemas are defined in `models/planning.py`; model construction
-and solving are separated in `solver/planning.py`. This is a continuous LP for
-one divisible product across a finite ordered period list.
+The request/response contracts are in `models/planning.py`; LP construction and result extraction are in `solver/planning.py`.
 
-- `quantity_unit` applies to demand, capacity, inventory, and shipment
-  quantities.
-- `time_unit` applies to each planning-period step and integer lane lead times.
-- `currency_unit` applies to objective and cost values.
-- Purchase and lane costs are currency per quantity unit; holding cost is
-  currency per quantity unit per period; shortage penalty is currency per
-  unmet quantity unit.
-- Procurement is supplier-to-warehouse dispatch. Purchase cost is charged
-  once on dispatch, not again at arrival or store delivery. Supplier capacity
-  may be constant across periods or specified per period.
-- Lead time counts positions in the supplied ordered period sequence.
-  Dispatches arriving beyond the horizon are excluded. There is no
-  supplier-inventory carryover or fixed-charge procurement decision.
-- Inventory conservation is opening/previous ending inventory + arrivals -
-  store deliveries = ending inventory. Storage capacity applies to ending
-  inventory; same-period receipts and deliveries may be sequenced.
-- Demand is fully delivered or explicitly unmet. Shortage variables are
-  available only when enabled, are bounded by demand, and require a penalty.
-- Terminal inventory mode is explicitly `none`, `zero`, or `minimum` for each
-  warehouse.
+- One divisible product, continuous flows, and a finite ordered period list.
+- `quantity_unit` applies to supplier capacity, inventory, shipment, demand, and shortage quantities.
+- `time_unit` labels one planning-period step; lane lead time is an integer number of positions in the submitted period list.
+- `currency_unit` applies to objective and cost values. Purchase/lane/shortage costs are per product unit; holding cost is per unit per period.
+- Procurement is supplier-to-warehouse dispatch. Supplier capacity applies to dispatch quantities by period. Purchase and inbound freight cost are charged once at dispatch.
+- Receipts dispatched with lead time that arrive beyond the planning horizon are excluded. There is no supplier inventory carryover or fixed-charge purchasing.
+- Per warehouse and period: ending inventory = opening/previous ending inventory + receipts arriving in that period − store deliveries. Storage capacity applies to ending inventory.
+- Store deliveries plus the shortage variable equal demand for each store/period. Shortage variables are bounded by demand, are only available when enabled, and require a finite nonnegative penalty. Otherwise demand must be met.
+- Terminal inventory is `none`, `zero`, or a per-warehouse `minimum` in the API. The current UI uses `none`.
+- The LP objective is procurement + inbound freight + outbound lane cost + holding + LP shortage penalties. The UI adapter sets LP outbound lane cost to zero because route cost is calculated separately. Its inbound tariff is haversine distance × ₹0.85 per product-unit-km × configured fuel multiplier.
+- CVRP enforces depot assignment, vehicle payload, and maximum route distance. It may return a partial route plan; routed quantity, LP planned quantity, and unserved demand remain distinct. LP shortage penalties do not apply to planned-but-unrouted quantity.
 
-The planning objective includes procurement, supplier-to-warehouse freight,
-warehouse-to-store lane cost (zero in the compatibility adapter), holding, and
-shortage cost. CVRP cost is a separate post-solve result, not part of a joint
-LP/CVRP optimum. The routing search uses a two-second guided-local-search
-limit, vehicle-specific per-kilometer and fixed costs, payload limits, and
-route-range limits. A CVRP search result is not guaranteed globally optimal.
+Non-feasible LP statuses return no objective or decision-variable values. Runtime is measured in milliseconds by the service. The UI displays backend LP time and separate end-to-end browser execution time in seconds. Infeasibility diagnostics describe the whole model and do not assert a unique cause.
 
-The API returns objective, variables, cost breakdown, status, runtime, and
-constraint residuals. Non-feasible statuses include no objective or plan
-values. Infeasibility diagnostics describe the whole model and do not claim a
-unique cause.
-
-## Local run (Windows PowerShell)
-
-From the repository root:
+## Run locally (Windows PowerShell)
 
 ```powershell
 cd backend
@@ -81,16 +39,11 @@ python -m pip install -r requirements.txt
 python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-In another PowerShell terminal, run backend tests and compilation:
+Run tests and compile:
 
 ```powershell
-cd backend
 python -m pytest tests -v
 python -m compileall -q main.py models solver tests
 ```
 
-The tiny hand-verifiable request and a response produced by OR-Tools are in
-`examples/planning-request.json` and `examples/planning-response.json`.
-
-
-The default baseline is a Pune/PCMC dairy replenishment demonstration. All supplier, retailer, driver, and operating data are fictional examples and are not live or company-reported data. Cost values are expressed in Indian rupees (INR).
+The tiny hand-verifiable request and OR-Tools response are in `examples/planning-request.json` and `examples/planning-response.json`. Generated interactive API documentation is available at `http://localhost:8000/docs`.

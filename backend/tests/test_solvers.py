@@ -211,6 +211,52 @@ def test_vrp_routes_feasible_subset_when_total_demand_exceeds_fleet_capacity():
     assert all(route.total_quantity_delivered <= vehicle.capacity + 1e-6 for route in routes)
 
 
+def test_vrp_returns_partial_route_when_range_binds_below_payload_capacity():
+    warehouse = Warehouse(
+        id="W",
+        name="Warehouse",
+        max_storage_capacity=10,
+        initial_inventory=0,
+        holding_cost_per_unit_period=0,
+        lat=37.0,
+        lng=-122.0,
+    )
+    zones = [
+        DemandZone(
+            id="near",
+            name="Nearby Store",
+            demands={1: 2},
+            lat=37.001,
+            lng=-122.0,
+        ),
+        DemandZone(
+            id="far",
+            name="Out-of-range Store",
+            demands={1: 2},
+            lat=38.0,
+            lng=-122.0,
+        ),
+    ]
+    vehicle = Vehicle(
+        id="V",
+        name="Van",
+        capacity=10,
+        fixed_cost=0,
+        variable_cost_per_km=1,
+        max_range_km=5,
+        assigned_driver="Driver",
+        warehouse_id="W",
+    )
+
+    routes = solve_last_mile_vrp(1, warehouse, zones, [vehicle], CostParameters())
+
+    delivered = sum(route.total_quantity_delivered for route in routes)
+    assert delivered == pytest.approx(2)
+    assert delivered < sum(zone.demands[1] for zone in zones)
+    assert all(route.total_quantity_delivered <= vehicle.capacity + 1e-6 for route in routes)
+    assert all(route.total_distance_km <= vehicle.max_range_km + 1e-6 for route in routes)
+
+
 def test_vrp_splits_a_store_delivery_across_multiple_vehicles():
     warehouse = Warehouse(
         id="W",
@@ -330,6 +376,47 @@ def test_vrp_partial_routes_respect_aggregate_and_vehicle_capacity():
         delivered_by_store[zone.id] <= zone.demands[1] + 1e-6 for zone in zones
     )
     assert all(route.total_quantity_delivered <= route.vehicle_capacity + 1e-6 for route in routes)
+
+
+def test_vrp_fills_payload_capacity_with_small_split_delivery_nodes():
+    warehouse = Warehouse(
+        id="W",
+        name="Warehouse",
+        max_storage_capacity=500,
+        initial_inventory=0,
+        holding_cost_per_unit_period=0,
+        lat=37.0,
+        lng=-122.0,
+    )
+    zones = [
+        DemandZone(
+            id=f"D{i}",
+            name=f"Store {i}",
+            demands={1: demand},
+            lat=37.001 + i * 0.001,
+            lng=-122.0,
+        )
+        for i, demand in enumerate((160.0, 160.0, 150.0), start=1)
+    ]
+    vehicles = [
+        Vehicle(
+            id=f"V{i}",
+            name=f"Van {i}",
+            capacity=160,
+            fixed_cost=0,
+            variable_cost_per_km=1,
+            max_range_km=250,
+            assigned_driver=f"Driver {i}",
+            warehouse_id="W",
+        )
+        for i in range(2)
+    ]
+
+    routes = solve_last_mile_vrp(1, warehouse, zones, vehicles, CostParameters())
+
+    assert sum(route.total_quantity_delivered for route in routes) == pytest.approx(320)
+    assert all(route.total_quantity_delivered <= route.vehicle_capacity + 1e-6 for route in routes)
+    assert all(route.total_distance_km <= route.max_range_km + 1e-6 for route in routes)
 
 
 def test_vrp_can_split_store_quantities_to_fill_mixed_capacity_fleet():

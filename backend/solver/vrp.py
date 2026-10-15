@@ -1,7 +1,17 @@
 import math
+import time
+from dataclasses import dataclass
 from typing import Dict, List, Tuple
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 from models.schemas import Vehicle, DemandZone, Warehouse, RouteStop, VehicleRouteSolution, CostParameters
+
+
+@dataclass
+class RoutingResult:
+    status: str
+    status_message: str
+    routes: List[VehicleRouteSolution]
+    solver_runtime_ms: float
 
 
 def compute_haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -15,42 +25,53 @@ def compute_haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> flo
     return R * c
 
 
-def solve_last_mile_vrp(
+def solve_last_mile_vrp_with_status(
     period: int,
     warehouse: Warehouse,
     demand_zones: List[DemandZone],
     vehicles: List[Vehicle],
     costs: CostParameters
-) -> List[VehicleRouteSolution]:
+) -> RoutingResult:
     """
     Solves Capacitated Vehicle Routing Problem (CVRP) for a single warehouse and period
     using Google OR-Tools Routing library.
     """
+    started = time.perf_counter()
     active_vehicles = [
         v for v in vehicles
         if v.is_active and v.warehouse_id == warehouse.id and v.capacity > 0
     ]
     if not active_vehicles or not demand_zones:
-        return []
+        return RoutingResult(
+            "NO_SOLUTION",
+            "No active vehicle or demand stop was available to route.",
+            [],
+            (time.perf_counter() - started) * 1000,
+        )
 
     # Filter zones with positive demand in this period
     served_zones = [z for z in demand_zones if z.is_active and z.demands.get(period, 0.0) > 0]
     if not served_zones or max(vehicle.capacity for vehicle in active_vehicles) <= 0:
-        return []
+        return RoutingResult(
+            "NO_SOLUTION",
+            "No positive-demand stop or usable vehicle capacity was available.",
+            [],
+            (time.perf_counter() - started) * 1000,
+        )
 
     # Node 0 is warehouse depot; Nodes 1..N are demand zones
     locations: List[Tuple[float, float, str, str, float]] = [
         (warehouse.lat, warehouse.lng, warehouse.id, warehouse.name, 0.0)
     ]
-    largest_vehicle_capacity = max(vehicle.capacity for vehicle in active_vehicles)
+    # Routing nodes are indivisible; small chunks approximate split deliveries without
+    # stranding payload when the LP allocation is spread across several demand zones.
+    delivery_chunk_capacity = min(vehicle.capacity for vehicle in active_vehicles) / 4.0
     for zone in served_zones:
-        quantity_per_vehicle = zone.demands.get(period, 0.0) / len(active_vehicles)
-        for _ in active_vehicles:
-            remaining_quantity = quantity_per_vehicle
-            while remaining_quantity > 0:
-                quantity = min(remaining_quantity, largest_vehicle_capacity)
-                locations.append((zone.lat, zone.lng, zone.id, zone.name, quantity))
-                remaining_quantity -= quantity
+        remaining_quantity = zone.demands.get(period, 0.0)
+        while remaining_quantity > 1e-9:
+            quantity = min(remaining_quantity, delivery_chunk_capacity)
+            locations.append((zone.lat, zone.lng, zone.id, zone.name, quantity))
+            remaining_quantity -= quantity
 
     num_locations = len(locations)
     num_vehicles = len(active_vehicles)
@@ -127,35 +148,34 @@ def solve_last_mile_vrp(
         "Distance",
     )
 
-    if total_demand > total_vehicle_capacity or costs.allow_unmet_demand:
-        max_distance_km = max(
+    max_distance_km = max(
+        (
+            distance_matrix[i][j] / 1000.0
+            for i in range(num_locations)
+            for j in range(num_locations)
+        ),
+        default=0.0,
+    )
+    max_vehicle_rate = max(
+        vehicle.variable_cost_per_km * costs.fuel_surcharge_multiplier
+        for vehicle in active_vehicles
+    )
+    route_cost_bound_cents = int(
+        math.ceil(
             (
-                distance_matrix[i][j] / 1000.0
-                for i in range(num_locations)
-                for j in range(num_locations)
-            ),
-            default=0.0,
-        )
-        max_vehicle_rate = max(
-            vehicle.variable_cost_per_km * costs.fuel_surcharge_multiplier
-            for vehicle in active_vehicles
-        )
-        route_cost_bound_cents = int(
-            math.ceil(
-                (
-                    (num_locations + num_vehicles) * max_distance_km * max_vehicle_rate
-                    + sum(vehicle.fixed_cost for vehicle in active_vehicles)
-                )
-                * 100
+                (num_locations + num_vehicles) * max_distance_km * max_vehicle_rate
+                + sum(vehicle.fixed_cost for vehicle in active_vehicles)
             )
+            * 100
         )
-        for node in range(1, num_locations):
-            # Prioritize delivered quantity, then minimize cost among equally complete plans.
-            quantity_priority = max(1, int(round(locations[node][4] * 1000)))
-            routing.AddDisjunction(
-                [manager.NodeToIndex(node)],
-                (route_cost_bound_cents + 1) * quantity_priority,
-            )
+    )
+    for node in range(1, num_locations):
+        # Permit partial plans when payload or route-range constraints prevent serving every stop.
+        quantity_priority = max(1, int(round(locations[node][4] * 1000)))
+        routing.AddDisjunction(
+            [manager.NodeToIndex(node)],
+            (route_cost_bound_cents + 1) * quantity_priority,
+        )
 
     # 5. Setting search parameters
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
@@ -165,7 +185,7 @@ def solve_last_mile_vrp(
     search_parameters.local_search_metaheuristic = (
         routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
     )
-    search_parameters.time_limit.seconds = 2
+    search_parameters.time_limit.seconds = 5
 
     # 6. Solve problem
     solution = routing.SolveWithParameters(search_parameters)
@@ -174,7 +194,12 @@ def solve_last_mile_vrp(
 
     if not solution:
         # Never manufacture a route when the routing solver cannot assign all visits.
-        return []
+        return RoutingResult(
+            "NO_SOLUTION",
+            f"The OR-Tools routing solver returned no solution (routing status {routing.status()}).",
+            [],
+            (time.perf_counter() - started) * 1000,
+        )
 
     for v_idx, vehicle in enumerate(active_vehicles):
         index = routing.Start(v_idx)
@@ -270,4 +295,26 @@ def solve_last_mile_vrp(
                 )
             )
 
-    return routes
+    return RoutingResult(
+        "FEASIBLE",
+        "The OR-Tools routing solver returned a feasible route assignment.",
+        routes,
+        (time.perf_counter() - started) * 1000,
+    )
+
+
+def solve_last_mile_vrp(
+    period: int,
+    warehouse: Warehouse,
+    demand_zones: List[DemandZone],
+    vehicles: List[Vehicle],
+    costs: CostParameters,
+) -> List[VehicleRouteSolution]:
+    """Backward-compatible route-list interface for existing solver callers."""
+    return solve_last_mile_vrp_with_status(
+        period=period,
+        warehouse=warehouse,
+        demand_zones=demand_zones,
+        vehicles=vehicles,
+        costs=costs,
+    ).routes

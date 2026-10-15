@@ -16,7 +16,7 @@ from models.schemas import (
 from models.planning import BaselineResponse, SupplyChainRequest, SupplyChainResponse
 from solver.baseline import run_baseline_policy
 from solver.planning import solve_planning_model
-from solver.vrp import solve_last_mile_vrp
+from solver.vrp import solve_last_mile_vrp_with_status
 
 app = FastAPI(
     title="OptiChain Mathematical Optimization Engine",
@@ -285,7 +285,7 @@ def run_vrp_only(
     costs: CostParameters = CostParameters()
 ):
     """Route designated planned deliveries; routing is a separate post-planning CVRP."""
-    routes = solve_last_mile_vrp(
+    result = solve_last_mile_vrp_with_status(
         period=period,
         warehouse=warehouse,
         demand_zones=demand_zones,
@@ -295,9 +295,12 @@ def run_vrp_only(
     return {
         "period": period,
         "warehouse_id": warehouse.id,
-        "routes": routes,
-        "total_routes_count": len(routes),
-        "total_last_mile_cost": sum(r.total_cost for r in routes)
+        "status": result.status,
+        "status_message": result.status_message,
+        "solver_runtime_ms": result.solver_runtime_ms,
+        "routes": result.routes,
+        "total_routes_count": len(result.routes),
+        "total_last_mile_cost": sum(r.total_cost for r in result.routes)
     }
 
 

@@ -29,8 +29,9 @@
 
 /* OptiChain design tokens: neutral, operational, and theme-aware. */
 :root { color-scheme: dark; }
-.app-shell { --canvas:#111923; --surface:#182230; --surface-2:#202c3b; --text:#edf2f7; --muted:#a8b6c8; --border:#354355; --accent:#7ca8d8; --accent-strong:#315f91; --success:#79c99a; --warning:#e7b968; --danger:#f08a8e; background:var(--canvas); color:var(--text); }
-.app-shell.theme-light { color-scheme:light; --canvas:#f5f7fa; --surface:#ffffff; --surface-2:#eef2f6; --text:#172b43; --muted:#5d6b7c; --border:#dce3eb; --accent:#315f91; --accent-strong:#244a73; --success:#287d4f; --warning:#a66a13; --danger:#b33b42; }
+.app-shell { --canvas:#f6f7f9; --surface:#ffffff; --surface-2:#eef0f3; --text:#20252c; --muted:#65707d; --border:#d9dde3; --accent:#c85a5a; --accent-strong:#a32e32; --success:#287d4f; --warning:#a66a13; --danger:#b33b42; background:var(--canvas); color:var(--text); }
+.app-shell.theme-light { color-scheme:light; }
+.app-shell.theme-dark { color-scheme:dark; --canvas:#14181d; --surface:#1c2229; --surface-2:#252d36; --text:#edf0f3; --muted:#a8b1bb; --border:#39424d; --accent:#e17878; --accent-strong:#a32e32; --success:#79c99a; --warning:#e7b968; --danger:#f08a8e; }
 .app-header,.app-sidebar { background:var(--surface); color:var(--text); border-color:var(--border); }
 .app-shell main { background:var(--canvas); color:var(--text); }
 .app-shell .text-muted { color:var(--muted); }
@@ -78,8 +79,8 @@
 .theme-light .text-slate-300,.theme-light .text-slate-400,.theme-light .text-slate-500 { color:var(--muted)!important; }
 .theme-light .border-slate-800,.theme-light .border-slate-800\/80,.theme-light .border-slate-700 { border-color:var(--border)!important; }
 .theme-light .placeholder\:text-slate-600::placeholder { color:#7c8998!important; }
-.theme-light .bg-blue-600 { background-color:#315f91!important; }
-.theme-light .text-blue-400 { color:#315f91!important; }
+.theme-light .bg-blue-600 { background-color:#a32e32!important; }
+.theme-light .text-blue-400 { color:#a32e32!important; }
 .theme-light .text-emerald-400 { color:#287d4f!important; }
 .theme-light .text-amber-400 { color:#a66a13!important; }
 .theme-light .bg-rose-950\/60,.theme-light .bg-rose-950\/40 { background-color:#fff0f0!important; }

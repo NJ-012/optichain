@@ -68,6 +68,9 @@ export interface OptimizationRequest {
   cost_parameters: CostParameters;
 }
 
+export type RoutingStatus = 'NOT_RUN' | 'COMPLETE' | 'INCOMPLETE' | 'FAILED';
+export type RoutingSolverStatus = 'NOT_RUN' | 'FEASIBLE' | 'NO_SOLUTION' | 'API_ERROR';
+
 export interface TransportationAllocation {
   period: number;
   supplier_id: string;
@@ -92,6 +95,14 @@ export interface PeriodInventoryPlan {
   storage_capacity: number;
   storage_utilization_pct: number;
   holding_cost: number;
+}
+
+export interface PlannedDelivery {
+  period: number;
+  warehouse_id: string;
+  store_id: string;
+  store_name: string;
+  quantity: number;
 }
 
 export interface RouteStop {
@@ -136,6 +147,9 @@ export interface DiagnosticReport {
 export interface OptimizationResponse {
   scenario_name: string;
   status: OptimizationStatus;
+  planning_status: OptimizationStatus;
+  routing_status: RoutingStatus;
+  routing_solver_status: RoutingSolverStatus;
   status_message: string;
   objective_value: number | null;
   total_cost: number;
@@ -146,7 +160,17 @@ export interface OptimizationResponse {
   shortage_penalty_cost: number;
   allocations: TransportationAllocation[];
   inventory_plans: PeriodInventoryPlan[];
+  planned_deliveries: PlannedDelivery[];
   vehicle_routes: VehicleRouteSolution[];
+  demand_units: number;
+  planned_delivery_units: number;
+  routed_delivery_units: number;
+  planning_shortage_units: number;
+  routing_unserved_units: number;
+  unserved_units: number;
+  quantity_unit: string;
+  currency_unit: string;
+  execution_time_ms: number;
   diagnostics: DiagnosticReport;
   created_at: string;
   result_source: 'python_ortools_planning_lp';

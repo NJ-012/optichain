@@ -337,11 +337,40 @@ def test_vrp_routes_exact_quantities_from_planning_result():
     )
 
     assert routed.status_code == 200
-    routes = routed.json()["routes"]
+    routing_result = routed.json()
+    assert routing_result["status"] == "FEASIBLE"
+    assert routing_result["status_message"]
+    assert routing_result["solver_runtime_ms"] >= 0
+    routes = routing_result["routes"]
     assert sum(route["total_quantity_delivered"] for route in routes) == pytest.approx(
         sum(row["quantity"] for row in plan["warehouse_to_store_shipments"])
     )
     assert all(route["total_quantity_delivered"] <= route["vehicle_capacity"] + 1e-6 for route in routes)
+
+
+def test_vrp_endpoint_reports_no_solution_when_no_vehicles_are_available():
+    client = TestClient(app)
+    response = client.post(
+        "/api/optimize/vrp?period=1",
+        json={
+            "warehouse": {
+                "id": "W1",
+                "name": "Warehouse",
+                "max_storage_capacity": 100,
+                "initial_inventory": 0,
+                "holding_cost_per_unit_period": 0,
+                "lat": 37.0,
+                "lng": -122.0,
+            },
+            "demand_zones": [],
+            "vehicles": [],
+            "costs": {},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "NO_SOLUTION"
+    assert response.json()["routes"] == []
 
 
 def test_fastapi_baseline_endpoint():
