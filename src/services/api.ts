@@ -15,6 +15,9 @@ const configuredApiBaseUrl = import.meta.env?.VITE_API_BASE_URL?.trim();
 export const API_BASE_URL = (
   configuredApiBaseUrl || (import.meta.env?.DEV ? 'http://localhost:8000' : '')
 ).replace(/\/+$/, '');
+const DEFAULT_HEALTH_TIMEOUT_MS = 10000;
+const DEFAULT_PLANNING_TIMEOUT_MS = 40000;
+const DEFAULT_ROUTING_TIMEOUT_MS = 30000;
 const FREIGHT_RATE_PER_UNIT_KM = 0.85;
 const FLOW_TOLERANCE = 1e-5;
 
@@ -184,7 +187,12 @@ export async function checkBackendHealth(
       service: string;
       ortools_version: string;
       python_version: string;
-    }>(`${baseUrl}/api/health`, { method: 'GET' }, 5000);
+    }>(
+      `${baseUrl}/api/health`,
+      { method: 'GET' },
+      configuredTimeout('VITE_API_HEALTH_TIMEOUT_MS', DEFAULT_HEALTH_TIMEOUT_MS),
+      'VITE_API_HEALTH_TIMEOUT_MS',
+    );
     if (
       typeof data.service !== 'string' ||
       typeof data.ortools_version !== 'string' ||
@@ -225,7 +233,11 @@ export async function executeOptimization(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(planningRequest),
     },
-    Math.max(10000, (planningRequest.solver_time_limit_seconds + 5) * 1000),
+    Math.max(
+      configuredTimeout('VITE_API_PLANNING_TIMEOUT_MS', DEFAULT_PLANNING_TIMEOUT_MS),
+      (planningRequest.solver_time_limit_seconds + 5) * 1000,
+    ),
+    'VITE_API_PLANNING_TIMEOUT_MS',
   );
   validatePlanningResponse(planning);
 
@@ -279,7 +291,8 @@ export async function executeOptimization(
                   costs: request.cost_parameters,
                 }),
               },
-              15000,
+              configuredTimeout('VITE_API_ROUTING_TIMEOUT_MS', DEFAULT_ROUTING_TIMEOUT_MS),
+              'VITE_API_ROUTING_TIMEOUT_MS',
             );
             if (!Array.isArray(response.routes)) {
               throw new BackendApiError('The routing API returned an invalid routes payload.');
@@ -371,15 +384,17 @@ export async function executeBaselinePolicy(
   request: OptimizationRequest,
   apiBaseUrl: string = API_BASE_URL,
 ): Promise<OptimizationResponse> {
+  const baseUrl = requireApiBaseUrl(apiBaseUrl);
   const planningRequest = toPlanningRequest(request);
   const baseline = await fetchJson<BaselineResponse>(
-    `${apiBaseUrl}/api/v1/supply-chain/baseline`,
+    `${baseUrl}/api/v1/supply-chain/baseline`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(planningRequest),
     },
-    10000,
+    configuredTimeout('VITE_API_PLANNING_TIMEOUT_MS', DEFAULT_PLANNING_TIMEOUT_MS),
+    'VITE_API_PLANNING_TIMEOUT_MS',
   );
   validatePlanningResponse(baseline);
   if (!baseline.is_heuristic || baseline.guaranteed_to_find_feasible_plan) {
@@ -798,6 +813,7 @@ async function fetchJson<T>(
   url: string,
   init: RequestInit,
   timeoutMs: number,
+  timeoutSetting?: string,
 ): Promise<T> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -819,7 +835,9 @@ async function fetchJson<T>(
   } catch (error) {
     if (error instanceof BackendApiError) throw error;
     if (controller.signal.aborted) {
-      throw new BackendApiError(`Backend request timed out after ${timeoutMs} ms.`);
+      throw new BackendApiError(
+        `Backend request timed out after ${timeoutMs} ms${timeoutSetting ? `; increase ${timeoutSetting} if this request is expected to take longer` : ''}.`,
+      );
     }
     throw new BackendApiError(
       `Unable to reach API at ${requestOrigin(url)}: ${errorMessage(error)}. Verify VITE_API_BASE_URL, backend health, and CORS.`,
@@ -838,11 +856,32 @@ function requireApiBaseUrl(baseUrl: string): string {
   }
   try {
     const parsed = new URL(normalized);
-    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Unsupported protocol.');
-    return normalized;
+    if (
+      !['http:', 'https:'].includes(parsed.protocol) ||
+      parsed.pathname !== '/' ||
+      parsed.search ||
+      parsed.hash ||
+      parsed.username ||
+      parsed.password
+    ) {
+      throw new Error('Expected an HTTP or HTTPS origin without a path, query, or credentials.');
+    }
+    return parsed.origin;
   } catch {
-    throw new BackendApiError('VITE_API_BASE_URL must be an absolute HTTP or HTTPS origin.');
+    throw new BackendApiError(
+      'VITE_API_BASE_URL must be an absolute HTTP or HTTPS origin without a path, query, or credentials.',
+    );
   }
+}
+
+function configuredTimeout(setting: string, fallbackMs: number): number {
+  const configuredValue = import.meta.env?.[setting]?.trim();
+  if (!configuredValue) return fallbackMs;
+  const timeoutMs = Number(configuredValue);
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
+    throw new BackendApiError(`${setting} must be a positive whole number of milliseconds.`);
+  }
+  return timeoutMs;
 }
 
 function requestOrigin(url: string): string {

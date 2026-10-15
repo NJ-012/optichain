@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { BackendApiError, checkBackendHealth, executeOptimization } from './api';
+import {
+  BackendApiError,
+  checkBackendHealth,
+  executeBaselinePolicy,
+  executeOptimization,
+} from './api';
 import { tinyPartialRoute, tinyPlanningResponse, tinyRequest } from './testFixtures';
 
 const originalFetch = globalThis.fetch;
@@ -16,8 +21,10 @@ function jsonResponse(value: unknown, status = 200): Response {
 }
 
 test('reports LP-planned but unrouted units as unserved and keeps statuses separate', async () => {
+  const requestedUrls: string[] = [];
   globalThis.fetch = async (input) => {
     const url = String(input);
+    requestedUrls.push(url);
     return url.includes('/api/v1/supply-chain/optimize')
       ? jsonResponse(tinyPlanningResponse)
       : jsonResponse(tinyPartialRoute);
@@ -32,6 +39,41 @@ test('reports LP-planned but unrouted units as unserved and keeps statuses separ
   assert.equal(result.routed_delivery_units, 2);
   assert.equal(result.unserved_units, 3);
   assert.equal(result.total_cost, 13);
+  assert.deepEqual(requestedUrls, [
+    'http://test-api/api/v1/supply-chain/optimize',
+    'http://test-api/api/optimize/vrp?period=1',
+  ]);
+});
+
+test('allows delayed health and routing responses to complete without retrying', async () => {
+  const requestedUrls: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    if (url.includes('/api/health') || url.includes('/api/optimize/vrp')) {
+      await new Promise((resolve) => setTimeout(resolve, 5500));
+    }
+    if (url.includes('/api/health')) {
+      return jsonResponse({
+        status: 'healthy',
+        service: 'OptiChain Optimization Service',
+        ortools_version: '9.11',
+        python_version: '3.12',
+      });
+    }
+    return url.includes('/api/v1/supply-chain/optimize')
+      ? jsonResponse(tinyPlanningResponse)
+      : jsonResponse(tinyPartialRoute);
+  };
+
+  const [health, result] = await Promise.all([
+    checkBackendHealth('https://api.test'),
+    executeOptimization(tinyRequest, 'https://api.test'),
+  ]);
+
+  assert.equal(health.isAvailable, true);
+  assert.equal(result.routing_solver_status, 'FEASIBLE');
+  assert.equal(requestedUrls.length, 3);
 });
 
 test('surfaces planning API failures instead of returning a success-shaped fallback', async () => {
@@ -89,6 +131,24 @@ test('reports missing production API configuration without requesting localhost'
     /VITE_API_BASE_URL is not configured/,
   );
   assert.equal(requestAttempted, false);
+});
+
+test('requires an API origin without a path and normalizes the origin for every endpoint', async () => {
+  let requestedUrl = '';
+  globalThis.fetch = async (input) => {
+    requestedUrl = String(input);
+    return jsonResponse({ detail: 'test failure' }, 503);
+  };
+
+  await assert.rejects(
+    executeOptimization(tinyRequest, 'https://api.test/api'),
+    /without a path, query, or credentials/,
+  );
+  await assert.rejects(
+    executeBaselinePolicy(tinyRequest, 'HTTPS://API.TEST:443/'),
+    (error: unknown) => error instanceof BackendApiError && error.statusCode === 503,
+  );
+  assert.equal(requestedUrl, 'https://api.test/api/v1/supply-chain/baseline');
 });
 
 test('rejects a planning response whose objective does not reconcile with its costs', async () => {
