@@ -4,7 +4,9 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from main import app
+from fastapi.middleware.cors import CORSMiddleware
+
+from main import app, resolve_cors_origins
 from models.planning import PlanningStatus, SupplyChainRequest, SupplyChainResponse
 from models.schemas import CostParameters, DemandZone, Vehicle, Warehouse
 from solver.baseline import run_baseline_policy
@@ -292,17 +294,38 @@ def test_health_validation_and_retired_integrated_endpoint_contracts():
     assert retired.status_code == 410
 
 
-def test_cors_allows_the_configured_vercel_origin_but_not_arbitrary_previews():
+def test_cors_allows_the_exact_vercel_origin_for_health_and_solver_preflights():
     client = TestClient(app)
     production_origin = (
-        "https://optichain-i9txw118-njiyati06-1446s-projects.vercel.app"
+        "https://optichain-i9txwi118-njiyati06-1446s-projects.vercel.app"
     )
-    allowed = client.options(
+    assert app.user_middleware[0].cls is CORSMiddleware
+
+    health = client.get("/api/health", headers={"Origin": production_origin})
+    health_preflight = client.options(
         "/api/health",
+        headers={"Origin": production_origin, "Access-Control-Request-Method": "GET"},
+    )
+    plan_preflight = client.options(
+        "/api/v1/supply-chain/optimize",
         headers={
             "Origin": production_origin,
-            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
         },
+    )
+    routing_preflight = client.options(
+        "/api/optimize/vrp?period=1",
+        headers={
+            "Origin": production_origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    planning_response = client.post(
+        "/api/v1/supply-chain/optimize",
+        json=request_data().model_dump(mode="json"),
+        headers={"Origin": production_origin},
     )
     unlisted_preview = client.options(
         "/api/health",
@@ -312,10 +335,27 @@ def test_cors_allows_the_configured_vercel_origin_but_not_arbitrary_previews():
         },
     )
 
-    assert allowed.status_code == 200
-    assert allowed.headers["access-control-allow-origin"] == production_origin
+    for response in (health, health_preflight, plan_preflight, routing_preflight):
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == production_origin
+    assert planning_response.status_code == 200
+    assert planning_response.headers["access-control-allow-origin"] == production_origin
+    assert "GET" in health_preflight.headers["access-control-allow-methods"]
+    assert "POST" in plan_preflight.headers["access-control-allow-methods"]
+    assert "POST" in routing_preflight.headers["access-control-allow-methods"]
+    assert "content-type" in plan_preflight.headers["access-control-allow-headers"].lower()
     assert unlisted_preview.status_code == 400
     assert "access-control-allow-origin" not in unlisted_preview.headers
+
+
+def test_render_cors_environment_extends_defaults_instead_of_replacing_them():
+    origins = resolve_cors_origins("https://another-production.example, http://localhost:3000/")
+
+    assert "https://optichain-i9txwi118-njiyati06-1446s-projects.vercel.app" in origins
+    assert "https://optichain-i9txw118-njiyati06-1446s-projects.vercel.app" in origins
+    assert "http://127.0.0.1:3000" in origins
+    assert "http://localhost:3000" in origins
+    assert "https://another-production.example" in origins
 
 
 def test_vrp_routes_exact_quantities_from_planning_result():
@@ -360,9 +400,15 @@ def test_vrp_routes_exact_quantities_from_planning_result():
             "vehicles": [vehicle.model_dump(mode="json")],
             "costs": CostParameters().model_dump(mode="json"),
         },
+        headers={
+            "Origin": "https://optichain-i9txwi118-njiyati06-1446s-projects.vercel.app"
+        },
     )
 
     assert routed.status_code == 200
+    assert routed.headers["access-control-allow-origin"] == (
+        "https://optichain-i9txwi118-njiyati06-1446s-projects.vercel.app"
+    )
     routing_result = routed.json()
     assert routing_result["status"] == "FEASIBLE"
     assert routing_result["status_message"]

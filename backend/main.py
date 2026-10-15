@@ -24,23 +24,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Restrict browser origins by configuration. Set CORS_ORIGINS to a comma-separated
-# list of trusted frontend origins in production. Local Vite origins are defaults for development.
-_default_cors_origins = (
-    "http://127.0.0.1:3000,http://localhost:3000,"
-    "https://optichain-i9txw118-njiyati06-1446s-projects.vercel.app"
-)
-_cors_origins = [origin.strip().rstrip("/") for origin in os.getenv(
-    "CORS_ORIGINS", _default_cors_origins
-).split(",") if origin.strip()]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
-)
-
 @app.middleware("http")
 async def add_security_headers(request, call_next):
     response = await call_next(request)
@@ -49,6 +32,39 @@ async def add_security_headers(request, call_next):
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     return response
+
+
+# Keep the known frontend origins allowed even when Render sets CORS_ORIGINS;
+# deployment-specific values extend this exact-origin allowlist.
+_default_cors_origins = {
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+    "https://optichain-i9txw118-njiyati06-1446s-projects.vercel.app",
+    "https://optichain-i9txwi118-njiyati06-1446s-projects.vercel.app",
+}
+
+
+def resolve_cors_origins(configured_origins: str | None) -> list[str]:
+    """Merge deployment-specific exact origins with the required known origins."""
+    configured = {
+        origin.strip().rstrip("/")
+        for origin in (configured_origins or "").split(",")
+        if origin.strip()
+    }
+    return sorted(_default_cors_origins | configured)
+
+
+_cors_origins = resolve_cors_origins(os.getenv("CORS_ORIGINS"))
+
+# Registered after the security middleware so CORS is outermost and also
+# decorates responses returned by the middleware/application stack.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
 
 
 @app.get("/api/health")
