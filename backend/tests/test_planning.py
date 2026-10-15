@@ -297,7 +297,7 @@ def test_health_validation_and_retired_integrated_endpoint_contracts():
 def test_cors_allows_the_exact_vercel_origin_for_health_and_solver_preflights():
     client = TestClient(app)
     production_origin = (
-        "https://optichain-i9txwi118-njiyati06-1446s-projects.vercel.app"
+        "https://optichain-ikuck8atz-jniyati06-projects.vercel.app"
     )
     assert app.user_middleware[0].cls is CORSMiddleware
 
@@ -352,6 +352,7 @@ def test_render_cors_environment_extends_defaults_instead_of_replacing_them():
     origins = resolve_cors_origins("https://another-production.example, http://localhost:3000/")
 
     assert "https://optichain-i9txwi118-njiyati06-1446s-projects.vercel.app" in origins
+    assert "https://optichain-ikuck8atz-jniyati06-projects.vercel.app" in origins
     assert "https://optichain-i9txw118-njiyati06-1446s-projects.vercel.app" in origins
     assert "http://127.0.0.1:3000" in origins
     assert "http://localhost:3000" in origins
@@ -401,13 +402,13 @@ def test_vrp_routes_exact_quantities_from_planning_result():
             "costs": CostParameters().model_dump(mode="json"),
         },
         headers={
-            "Origin": "https://optichain-i9txwi118-njiyati06-1446s-projects.vercel.app"
+            "Origin": "https://optichain-ikuck8atz-jniyati06-projects.vercel.app"
         },
     )
 
     assert routed.status_code == 200
     assert routed.headers["access-control-allow-origin"] == (
-        "https://optichain-i9txwi118-njiyati06-1446s-projects.vercel.app"
+        "https://optichain-ikuck8atz-jniyati06-projects.vercel.app"
     )
     routing_result = routed.json()
     assert routing_result["status"] == "FEASIBLE"

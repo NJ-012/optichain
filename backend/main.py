@@ -41,6 +41,7 @@ _default_cors_origins = {
     "http://localhost:3000",
     "https://optichain-i9txw118-njiyati06-1446s-projects.vercel.app",
     "https://optichain-i9txwi118-njiyati06-1446s-projects.vercel.app",
+    "https://optichain-ikuck8atz-jniyati06-projects.vercel.app",
 }
 
 
