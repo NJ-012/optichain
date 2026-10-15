@@ -292,6 +292,32 @@ def test_health_validation_and_retired_integrated_endpoint_contracts():
     assert retired.status_code == 410
 
 
+def test_cors_allows_the_configured_vercel_origin_but_not_arbitrary_previews():
+    client = TestClient(app)
+    production_origin = (
+        "https://optichain-i9txw118-njiyati06-1446s-projects.vercel.app"
+    )
+    allowed = client.options(
+        "/api/health",
+        headers={
+            "Origin": production_origin,
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    unlisted_preview = client.options(
+        "/api/health",
+        headers={
+            "Origin": "https://unlisted-preview.vercel.app",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert allowed.status_code == 200
+    assert allowed.headers["access-control-allow-origin"] == production_origin
+    assert unlisted_preview.status_code == 400
+    assert "access-control-allow-origin" not in unlisted_preview.headers
+
+
 def test_vrp_routes_exact_quantities_from_planning_result():
     client = TestClient(app)
     request = request_data()

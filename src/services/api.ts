@@ -11,12 +11,16 @@ import {
 } from '../types/domain';
 import { INITIAL_PRODUCT_INFO } from '../data/initialScope';
 
-export const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8000';
+const configuredApiBaseUrl = import.meta.env?.VITE_API_BASE_URL?.trim();
+export const API_BASE_URL = (
+  configuredApiBaseUrl || (import.meta.env?.DEV ? 'http://localhost:8000' : '')
+).replace(/\/+$/, '');
 const FREIGHT_RATE_PER_UNIT_KM = 0.85;
 const FLOW_TOLERANCE = 1e-5;
 
 export interface BackendHealth {
   isAvailable: boolean;
+  isChecking?: boolean;
   service?: string;
   ortools_version?: string;
   python_version?: string;
@@ -174,14 +178,23 @@ export async function checkBackendHealth(
 ): Promise<BackendHealth> {
   const started = performance.now();
   try {
+    const baseUrl = requireApiBaseUrl(apiBaseUrl);
     const data = await fetchJson<{
       status: string;
       service: string;
       ortools_version: string;
       python_version: string;
-    }>(`${apiBaseUrl}/api/health`, { method: 'GET' }, 2000);
+    }>(`${baseUrl}/api/health`, { method: 'GET' }, 5000);
+    if (
+      typeof data.service !== 'string' ||
+      typeof data.ortools_version !== 'string' ||
+      typeof data.python_version !== 'string'
+    ) {
+      throw new BackendApiError('The backend health endpoint returned an invalid response.');
+    }
     return {
       isAvailable: data.status === 'healthy',
+      isChecking: false,
       service: data.service,
       ortools_version: data.ortools_version,
       python_version: data.python_version,
@@ -191,6 +204,7 @@ export async function checkBackendHealth(
   } catch (error) {
     return {
       isAvailable: false,
+      isChecking: false,
       error: errorMessage(error),
       latencyMs: Math.round(performance.now() - started),
     };
@@ -201,10 +215,11 @@ export async function executeOptimization(
   request: OptimizationRequest,
   apiBaseUrl: string = API_BASE_URL,
 ): Promise<OptimizationResponse> {
+  const baseUrl = requireApiBaseUrl(apiBaseUrl);
   const executionStarted = performance.now();
   const planningRequest = toPlanningRequest(request);
   const planning = await fetchJson<PlanningResponse>(
-    `${apiBaseUrl}/api/v1/supply-chain/optimize`,
+    `${baseUrl}/api/v1/supply-chain/optimize`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -253,7 +268,7 @@ export async function executeOptimization(
           let noSolutionForJob = false;
           try {
             const response = await fetchJson<RoutingResponse>(
-              `${apiBaseUrl}/api/optimize/vrp?period=${encodeURIComponent(period)}`,
+              `${baseUrl}/api/optimize/vrp?period=${encodeURIComponent(period)}`,
               {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -704,6 +719,15 @@ function mapPlanningResponse(
 function validatePlanningResponse(
   response: PlanningResponse | BaselineResponse,
 ): void {
+  if (!response || typeof response !== 'object') {
+    throw new BackendApiError('The optimization API returned an invalid response.');
+  }
+  if (
+    typeof response.scenario_name !== 'string' ||
+    typeof response.status_message !== 'string'
+  ) {
+    throw new BackendApiError('The optimization API response is missing its scenario or solver message.');
+  }
   const statuses: OptimizationStatus[] = [
     'OPTIMAL',
     'FEASIBLE',
@@ -716,6 +740,29 @@ function validatePlanningResponse(
   ];
   if (!statuses.includes(response.status)) {
     throw new BackendApiError('The optimization API returned an unknown solver status.');
+  }
+  if (
+    !Array.isArray(response.supplier_to_warehouse_shipments) ||
+    !Array.isArray(response.warehouse_to_store_shipments) ||
+    !Array.isArray(response.ending_inventory) ||
+    !Array.isArray(response.unmet_demand) ||
+    !response.cost_breakdown ||
+    !['procurement', 'supplier_to_warehouse_transport', 'warehouse_to_store_transport', 'holding', 'shortage', 'total']
+      .every((key) => Number.isFinite(response.cost_breakdown[key as keyof typeof response.cost_breakdown]))
+  ) {
+    throw new BackendApiError('The optimization API response is missing required solution or cost fields.');
+  }
+  if (
+    'solver_runtime_ms' in response &&
+    (!Number.isFinite(response.solver_runtime_ms) || response.solver_runtime_ms < 0)
+  ) {
+    throw new BackendApiError('The optimization API returned an invalid solver runtime.');
+  }
+  if (
+    response.objective_value != null &&
+    !Number.isFinite(response.objective_value)
+  ) {
+    throw new BackendApiError('The optimization API returned a non-finite objective value.');
   }
   if (
     response.status !== 'OPTIMAL' &&
@@ -774,9 +821,35 @@ async function fetchJson<T>(
     if (controller.signal.aborted) {
       throw new BackendApiError(`Backend request timed out after ${timeoutMs} ms.`);
     }
-    throw new BackendApiError(errorMessage(error));
+    throw new BackendApiError(
+      `Unable to reach API at ${requestOrigin(url)}: ${errorMessage(error)}. Verify VITE_API_BASE_URL, backend health, and CORS.`,
+    );
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+function requireApiBaseUrl(baseUrl: string): string {
+  const normalized = baseUrl.trim().replace(/\/+$/, '');
+  if (!normalized) {
+    throw new BackendApiError(
+      'VITE_API_BASE_URL is not configured. Set the FastAPI service origin in the frontend deployment environment and rebuild.',
+    );
+  }
+  try {
+    const parsed = new URL(normalized);
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Unsupported protocol.');
+    return normalized;
+  } catch {
+    throw new BackendApiError('VITE_API_BASE_URL must be an absolute HTTP or HTTPS origin.');
+  }
+}
+
+function requestOrigin(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
   }
 }
 

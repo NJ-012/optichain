@@ -38,7 +38,10 @@ export default function App() {
   const [responseInputKey, setResponseInputKey] = useState<string | null>(null);
   const [isSolving, setIsSolving] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
-  const [backendHealth, setBackendHealth] = useState<BackendHealth>({ isAvailable: false });
+  const [backendHealth, setBackendHealth] = useState<BackendHealth>({
+    isAvailable: false,
+    isChecking: true,
+  });
 
   const resolvedTheme = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
   const requestKey = fingerprintInputs(request);
@@ -128,7 +131,7 @@ export default function App() {
         theme={theme}
         setTheme={setTheme}
       />
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
         <Sidebar
           activeTab={activeTab}
           setActiveTab={(tab) => setActiveTab(tab as Section)}
@@ -136,7 +139,15 @@ export default function App() {
           setSelectedPeriod={setSelectedPeriod}
           request={request}
         />
-        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {!backendHealth.isAvailable && backendHealth.error && (
+            <div
+              role="status"
+              className="mx-6 mt-4 rounded border border-amber-700 bg-amber-50 p-3 text-xs text-amber-950"
+            >
+              <strong>Optimization API unavailable.</strong> {backendHealth.error}
+            </div>
+          )}
           {runError && (
             <div
               role="alert"

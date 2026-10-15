@@ -35,14 +35,26 @@ export const Header: React.FC<HeaderProps> = ({
       <div
         className="flex items-center gap-1.5 whitespace-nowrap rounded border px-2.5 py-1 text-[11px] font-mono"
         title={
-          backendHealth.isAvailable
-            ? `FastAPI OR-Tools connected (${backendHealth.latencyMs} ms)`
-            : `FastAPI unavailable${backendHealth.error ? `: ${backendHealth.error}` : ''}`
+          backendHealth.isChecking
+            ? 'Checking FastAPI OR-Tools availability.'
+            : backendHealth.isAvailable
+              ? `FastAPI OR-Tools connected (${backendHealth.latencyMs} ms)`
+              : `FastAPI unavailable${backendHealth.error ? `: ${backendHealth.error}` : ''}`
         }
       >
-        <Server className="h-3 w-3 text-slate-400" />
-        <span className={backendHealth.isAvailable ? 'text-emerald-500' : 'text-amber-500'}>
-          API: {backendHealth.isAvailable ? 'Connected' : 'Unavailable'}
+        {backendHealth.isChecking ? (
+          <RefreshCw className="h-3 w-3 animate-spin text-slate-400" />
+        ) : (
+          <Server className="h-3 w-3 text-slate-400" />
+        )}
+        <span className={
+          backendHealth.isChecking
+            ? 'text-slate-400'
+            : backendHealth.isAvailable
+              ? 'text-emerald-500'
+              : 'text-amber-500'
+        }>
+          API: {backendHealth.isChecking ? 'Checking…' : backendHealth.isAvailable ? 'Connected' : 'Unavailable'}
         </span>
       </div>
 

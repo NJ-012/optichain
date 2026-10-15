@@ -26,8 +26,12 @@ app = FastAPI(
 
 # Restrict browser origins by configuration. Set CORS_ORIGINS to a comma-separated
 # list of trusted frontend origins in production. Local Vite origins are defaults for development.
-_cors_origins = [origin.strip() for origin in os.getenv(
-    "CORS_ORIGINS", "http://127.0.0.1:3000,http://localhost:3000"
+_default_cors_origins = (
+    "http://127.0.0.1:3000,http://localhost:3000,"
+    "https://optichain-i9txw118-njiyati06-1446s-projects.vercel.app"
+)
+_cors_origins = [origin.strip().rstrip("/") for origin in os.getenv(
+    "CORS_ORIGINS", _default_cors_origins
 ).split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,

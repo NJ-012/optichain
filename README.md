@@ -14,6 +14,8 @@ The application has three sections:
 
 The single primary action, **Validate and Solve**, calls the real FastAPI service. There is no browser optimization fallback or automatic startup solve. Planning API errors are shown. Routing API failures or partial routes preserve the LP result but mark the overall run for attention and report all quantities not physically routed as unserved.
 
+Production API configuration is required. In development, the frontend uses `http://localhost:8000` only when `VITE_API_BASE_URL` is not set. A production build with no configured API origin reports that configuration error and does not attempt to call localhost.
+
 ## Model and cost assumptions
 
 - One divisible product over a finite, ordered set of periods. The LP is continuous and solved with OR-Tools GLOP.
@@ -48,9 +50,15 @@ npm ci
 node .\node_modules\vite\bin\vite.js --host 127.0.0.1 --port 3000
 ```
 
-Open `http://localhost:3000`. The browser API origin defaults to `http://localhost:8000`. Copy `.env.example` to `.env`, set `VITE_API_BASE_URL` to the browser-reachable FastAPI origin, and restart Vite after changing it. `VITE_API_BASE_URL` is embedded at frontend build time.
+Open `http://localhost:3000`. The development API origin defaults to `http://localhost:8000`. Copy `.env.example` to `.env`, set `VITE_API_BASE_URL` to the browser-reachable FastAPI origin, and restart Vite after changing it. `VITE_API_BASE_URL` is embedded at frontend build time.
 
-FastAPI permits local Vite origins by default. Set `CORS_ORIGINS` to a comma-separated list containing the exact deployed frontend origin (scheme and host, plus non-default port if applicable). For Docker Compose deployments, set both `VITE_API_BASE_URL` to the browser-reachable API address and `CORS_ORIGINS` to the deployed frontend origin before building/starting the stack.
+### Vercel + Render deployment
+
+Set `VITE_API_BASE_URL` in the Vercel project’s build environment to the actual HTTPS origin of the existing Render API service (origin only, without `/api`). Redeploy after changing it; Vite embeds this value in the frontend bundle. Do not use `localhost` in a deployed build.
+
+Set `CORS_ORIGINS` in the Render service environment to a comma-separated allowlist of exact browser origins, including the deployed Vercel origin. The known origin in `.env.example` is the provided project deployment origin; it currently responds with Vercel `404 DEPLOYMENT_NOT_FOUND` and must be restored or replaced with the active deployment domain. Do not allow wildcard Vercel preview origins. For Render, use the repository `backend` directory as the service root, install `requirements.txt`, start with `uvicorn main:app --host 0.0.0.0 --port $PORT`, set health check path to `/api/health`, and inspect the Render service logs for startup/import errors.
+
+No Render service URL was present in this repository or local environment during this verification. Obtain the existing service’s actual URL from its Render dashboard and configure it in Vercel; it is intentionally not guessed here. To diagnose connectivity, open `<Render service origin>/api/health` in a browser, confirm JSON status `healthy`, then check browser DevTools Network/Console for the request origin, preflight response, and CORS headers. For Docker Compose deployments, set both `VITE_API_BASE_URL` to the browser-reachable API origin and `CORS_ORIGINS` to the exact frontend origin before building/starting the stack.
 
 ## Tests and production build
 

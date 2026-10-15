@@ -9,7 +9,9 @@
 
 The planning endpoint uses OR-Tools GLOP. For feasible planning results, the frontend submits planned delivery quantities to the CVRP endpoint. The two are sequential optimizations, not a joint global optimum. CVRP uses a 5-second guided-local-search heuristic. It splits demand into indivisible visit nodes sized at one quarter of the smallest active vehicle capacity to reduce payload waste, but remains heuristic and may be partial. The response includes routing status, status message, runtime in milliseconds, and the legacy `routes` array. Its returned routes are validated against requested deliveries, vehicle payloads, and route-distance limits; any missing volume is reported as unrouted and is not claimed as fulfilled. CVRP route cost is separate from the LP objective.
 
-The old integrated, transportation-only, and inventory-only endpoints return HTTP 410 to prevent clients from silently using a different formulation. The service is stateless. Root-level Docker Compose builds the API and frontend; production `CORS_ORIGINS` must include the exact browser-visible frontend origin.
+The old integrated, transportation-only, and inventory-only endpoints return HTTP 410 to prevent clients from silently using a different formulation. The service is stateless. Root-level Docker Compose builds the API and frontend; production `CORS_ORIGINS` must include the exact browser-visible frontend origin. The default allowlist contains local Vite origins and the provided Vercel project origin only; it does not include wildcard preview domains. If Render has an explicit `CORS_ORIGINS` setting, update that setting too.
+
+For the existing Render web service, use `backend` as the root directory, install dependencies with `pip install -r requirements.txt`, start with `uvicorn main:app --host 0.0.0.0 --port $PORT`, and configure health check `/api/health`. Set `CORS_ORIGINS` to the exact Vercel origin(s) that should call this API. The frontend API origin is a separate Vercel build variable, `VITE_API_BASE_URL`, and must be set to the actual Render service origin. Neither production URL can safely be inferred from this codebase.
 
 ## Planning model and units
 

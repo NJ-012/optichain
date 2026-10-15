@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { BackendApiError, executeOptimization } from './api';
+import { BackendApiError, checkBackendHealth, executeOptimization } from './api';
 import { tinyPartialRoute, tinyPlanningResponse, tinyRequest } from './testFixtures';
 
 const originalFetch = globalThis.fetch;
@@ -42,6 +42,65 @@ test('surfaces planning API failures instead of returning a success-shaped fallb
       error instanceof BackendApiError &&
       error.statusCode === 503 &&
       error.message.includes('solver service unavailable'),
+  );
+});
+
+test('checks the configured backend health route and validates the response', async () => {
+  let requestedUrl = '';
+  globalThis.fetch = async (input) => {
+    requestedUrl = String(input);
+    return jsonResponse({
+      status: 'healthy',
+      service: 'OptiChain Optimization Service',
+      ortools_version: '9.11',
+      python_version: '3.12',
+    });
+  };
+
+  const health = await checkBackendHealth('https://api.test/');
+  assert.equal(requestedUrl, 'https://api.test/api/health');
+  assert.equal(health.isAvailable, true);
+  assert.equal(health.ortools_version, '9.11');
+});
+
+test('explains backend network failures with API configuration and CORS guidance', async () => {
+  globalThis.fetch = async () => {
+    throw new TypeError('Failed to fetch');
+  };
+
+  const health = await checkBackendHealth('https://api.test');
+  assert.equal(health.isAvailable, false);
+  assert.match(health.error ?? '', /https:\/\/api\.test/);
+  assert.match(health.error ?? '', /VITE_API_BASE_URL, backend health, and CORS/);
+});
+
+test('reports missing production API configuration without requesting localhost', async () => {
+  let requestAttempted = false;
+  globalThis.fetch = async () => {
+    requestAttempted = true;
+    throw new Error('should not call fetch');
+  };
+
+  const health = await checkBackendHealth('');
+  assert.equal(health.isAvailable, false);
+  assert.match(health.error ?? '', /VITE_API_BASE_URL is not configured/);
+  await assert.rejects(
+    executeOptimization(tinyRequest, ''),
+    /VITE_API_BASE_URL is not configured/,
+  );
+  assert.equal(requestAttempted, false);
+});
+
+test('rejects a planning response whose objective does not reconcile with its costs', async () => {
+  globalThis.fetch = async () =>
+    jsonResponse({
+      ...tinyPlanningResponse,
+      objective_value: 11,
+    });
+
+  await assert.rejects(
+    executeOptimization(tinyRequest, 'https://api.test'),
+    /objective does not reconcile/,
   );
 });
 
