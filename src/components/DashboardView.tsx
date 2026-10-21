@@ -266,7 +266,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <tbody>
                         {visibleRoutes.map((route) => (
                           <tr key={`${route.vehicle_id}-${route.period}`}>
-                            <td>P{route.period}</td><td>{route.vehicle_name}</td><td>{route.warehouse_id}</td>
+                            <td>P{route.period}</td><td>{route.vehicle_name}</td><td>{request.warehouses.find((warehouse) => warehouse.id === route.warehouse_id)?.name ?? route.warehouse_id}</td>
                             <td>{quantity(route.total_quantity_delivered)} / {quantity(route.vehicle_capacity)}</td>
                             <td>{route.total_distance_km.toLocaleString('en-IN')} km / {route.max_range_km.toLocaleString('en-IN')} km</td>
                             <td>{currency(route.total_cost)}</td>

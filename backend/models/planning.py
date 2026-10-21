@@ -36,6 +36,12 @@ class WarehouseInput(BaseModel):
     holding_cost_per_unit_period: float = Field(
         ge=0, allow_inf_nan=False, description="Currency per product unit per planning period"
     )
+    outbound_capacity_per_period: Optional[float] = Field(
+        default=None,
+        ge=0,
+        allow_inf_nan=False,
+        description="Maximum product units dispatchable per period from active assigned vehicles",
+    )
 
 
 class StoreInput(BaseModel):
@@ -97,6 +103,7 @@ class SupplyChainRequest(BaseModel):
         default=None, description="Currency per unmet product unit; required when shortages are enabled"
     )
     terminal_inventory: TerminalInventory = Field(default_factory=TerminalInventory)
+    quantity_integrality: Literal["continuous", "integer"] = "continuous"
     solver_time_limit_seconds: float = Field(default=30.0, gt=0, le=3600, allow_inf_nan=False)
 
     @model_validator(mode="after")
@@ -149,6 +156,13 @@ class SupplyChainRequest(BaseModel):
             if warehouse.opening_inventory > warehouse.storage_capacity:
                 raise ValueError(
                     f"warehouse {warehouse.id} opening_inventory exceeds storage_capacity"
+                )
+            if (
+                warehouse.outbound_capacity_per_period is not None
+                and not _finite_nonnegative(warehouse.outbound_capacity_per_period)
+            ):
+                raise ValueError(
+                    f"warehouse {warehouse.id} outbound capacity must be finite and nonnegative"
                 )
 
         supplier_ids = {supplier.id for supplier in self.suppliers}

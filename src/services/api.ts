@@ -47,6 +47,7 @@ interface PlanningRequest {
     storage_capacity: number;
     opening_inventory: number;
     holding_cost_per_unit_period: number;
+    outbound_capacity_per_period: number;
   }>;
   stores: Array<{ id: string; demand_by_period: Record<number, number> }>;
   supplier_to_warehouse: Array<{
@@ -63,6 +64,7 @@ interface PlanningRequest {
   allow_unmet_demand: boolean;
   shortage_penalty_per_unit: number | null;
   terminal_inventory: { mode: 'none'; minimum_by_warehouse: Record<string, number> };
+  quantity_integrality: 'continuous' | 'integer';
   solver_time_limit_seconds: number;
 }
 
@@ -440,6 +442,14 @@ function toPlanningRequest(request: OptimizationRequest): PlanningRequest {
       storage_capacity: warehouse.max_storage_capacity,
       opening_inventory: warehouse.initial_inventory,
       holding_cost_per_unit_period: warehouse.holding_cost_per_unit_period,
+      outbound_capacity_per_period: request.vehicles
+        .filter(
+          (vehicle) =>
+            vehicle.is_active &&
+            vehicle.warehouse_id === warehouse.id &&
+            vehicle.capacity > 0,
+        )
+        .reduce((sum, vehicle) => sum + vehicle.capacity, 0),
     })),
     stores: stores.map((zone) => ({
       id: zone.id,
@@ -471,6 +481,7 @@ function toPlanningRequest(request: OptimizationRequest): PlanningRequest {
       ? request.cost_parameters.shortage_penalty_per_unit
       : null,
     terminal_inventory: { mode: 'none', minimum_by_warehouse: {} },
+    quantity_integrality: 'integer',
     solver_time_limit_seconds: 30,
   };
 }
@@ -660,6 +671,7 @@ function mapPlanningResponse(
     ...planning.diagnostics,
     'Legacy UI compatibility rates: supplier-to-warehouse freight is haversine km × ₹0.85/unit-km × fuel multiplier; warehouse-to-store freight is charged only by VRP.',
     'The LP objective excludes vehicle routing costs. Total cost shown by the legacy UI adds the separately optimized VRP route cost and is not a joint LP/CVRP optimum.',
+    `Reconciliation: ${plannedDeliveryUnits.toFixed(3)} units planned by LP, ${routedDeliveryUnits.toFixed(3)} units routed, ${routingUnservedUnits.toFixed(3)} units not routed.`,
     ...routingWarnings,
   ];
   const bottlenecks = [
@@ -805,6 +817,21 @@ function validatePlanningResponse(
   ) {
     throw new BackendApiError(
       'The planning API objective does not reconcile with its reported cost breakdown.',
+    );
+  }
+  if (
+    (response.status === 'OPTIMAL' || response.status === 'FEASIBLE') &&
+    Math.abs(
+      response.cost_breakdown.total -
+        (response.cost_breakdown.procurement +
+          response.cost_breakdown.supplier_to_warehouse_transport +
+          response.cost_breakdown.warehouse_to_store_transport +
+          response.cost_breakdown.holding +
+          response.cost_breakdown.shortage),
+    ) > Math.max(1e-5, Math.abs(response.cost_breakdown.total) * 1e-8)
+  ) {
+    throw new BackendApiError(
+      'The planning API cost breakdown components do not reconcile with the reported total.',
     );
   }
 }
