@@ -128,6 +128,53 @@ def test_storage_capacity_bottleneck_limits_early_receipts():
     assert max(row.violation for row in result.constraint_residuals) < 1e-7
 
 
+def test_outbound_capacity_limits_planning_to_active_fleet_capacity():
+    request = request_data(
+        stores=[{"id": "D1", "demand_by_period": {"1": 8}}],
+        warehouses=[
+            {
+                "id": "W1",
+                "storage_capacity": 10,
+                "opening_inventory": 0,
+                "holding_cost_per_unit_period": 0,
+                "outbound_capacity_per_period": 3,
+            }
+        ],
+        allow_unmet_demand=True,
+        shortage_penalty_per_unit=100,
+    )
+    result = solve_planning_model(request)
+
+    assert result.status == PlanningStatus.OPTIMAL
+    assert sum(row.quantity for row in result.warehouse_to_store_shipments) == pytest.approx(3)
+    assert sum(row.unmet_quantity for row in result.unmet_demand) == pytest.approx(5)
+    assert any(row.name == "outbound_capacity_W1_p1" for row in result.constraint_residuals)
+
+
+def test_integer_quantity_mode_keeps_crates_indivisible_without_rounding():
+    request = request_data(
+        stores=[{"id": "D1", "demand_by_period": {"1": 5.5}}],
+        quantity_integrality="integer",
+        allow_unmet_demand=True,
+        shortage_penalty_per_unit=100,
+    )
+    result = solve_planning_model(request)
+
+    assert result.status == PlanningStatus.OPTIMAL
+    assert sum(row.quantity for row in result.warehouse_to_store_shipments) == pytest.approx(5)
+    assert sum(row.unmet_quantity for row in result.unmet_demand) == pytest.approx(0.5)
+    assert all(float(row.quantity).is_integer() for row in result.warehouse_to_store_shipments)
+    assert any("integer crates" in note for note in result.diagnostics)
+
+
+def test_continuous_quantity_mode_preserves_fractional_behavior():
+    request = request_data(stores=[{"id": "D1", "demand_by_period": {"1": 5.5}}])
+    result = solve_planning_model(request)
+
+    assert result.status == PlanningStatus.OPTIMAL
+    assert sum(row.quantity for row in result.warehouse_to_store_shipments) == pytest.approx(5.5)
+
+
 def test_insufficient_supply_is_infeasible_without_shortages():
     request = request_data(
         suppliers=[{"id": "S1", "capacity_per_period": 2, "unit_purchase_cost": 2}]

@@ -33,10 +33,15 @@ class PlanningModel:
 
 
 def build_planning_model(request: SupplyChainRequest) -> PlanningModel:
-    """Build the integrated continuous LP; procurement is attached to dispatch quantities."""
-    solver = pywraplp.Solver.CreateSolver("GLOP")
+    """Build the planning model; integer mode models indivisible crates without rounding."""
+    solver = pywraplp.Solver.CreateSolver(
+        "SCIP" if request.quantity_integrality == "integer" else "GLOP"
+    )
     if solver is None:
-        raise RuntimeError("Google OR-Tools GLOP solver is unavailable")
+        raise RuntimeError(
+            "Google OR-Tools planning solver is unavailable "
+            f"(requested {'SCIP' if request.quantity_integrality == 'integer' else 'GLOP'})"
+        )
 
     period_index = {period: index for index, period in enumerate(request.periods)}
     procurement: Dict[Tuple[str, str, int], pywraplp.Variable] = {}
@@ -44,6 +49,11 @@ def build_planning_model(request: SupplyChainRequest) -> PlanningModel:
     inventory: Dict[Tuple[str, int], pywraplp.Variable] = {}
     shortages: Dict[Tuple[str, int], pywraplp.Variable] = {}
     constraints: List[Tuple[str, str, float, pywraplp.Constraint]] = []
+
+    def quantity_var(lower_bound: float, upper_bound: float, name: str):
+        if request.quantity_integrality == "integer":
+            return solver.IntVar(lower_bound, upper_bound, name)
+        return solver.NumVar(lower_bound, upper_bound, name)
 
     dispatch_by_supplier_period: Dict[Tuple[str, int], List[pywraplp.Variable]] = {}
     arrivals_by_warehouse_period: Dict[Tuple[str, int], List[pywraplp.Variable]] = {}
@@ -53,7 +63,7 @@ def build_planning_model(request: SupplyChainRequest) -> PlanningModel:
             if arrival_index >= len(request.periods):
                 continue
             arrival_period = request.periods[arrival_index]
-            variable = solver.NumVar(
+            variable = quantity_var(
                 0.0,
                 solver.infinity(),
                 f"in_{lane.supplier_id}_{lane.warehouse_id}_p{dispatch_period}",
@@ -67,7 +77,7 @@ def build_planning_model(request: SupplyChainRequest) -> PlanningModel:
     delivery_by_store_period: Dict[Tuple[str, int], List[pywraplp.Variable]] = {}
     for lane in request.warehouse_to_store:
         for period in request.periods:
-            variable = solver.NumVar(
+            variable = quantity_var(
                 0.0, solver.infinity(), f"out_{lane.warehouse_id}_{lane.store_id}_p{period}"
             )
             deliveries[(lane.warehouse_id, lane.store_id, period)] = variable
@@ -76,7 +86,7 @@ def build_planning_model(request: SupplyChainRequest) -> PlanningModel:
 
     for warehouse in request.warehouses:
         for period in request.periods:
-            inventory[(warehouse.id, period)] = solver.NumVar(
+            inventory[(warehouse.id, period)] = quantity_var(
                 0.0, warehouse.storage_capacity, f"inv_{warehouse.id}_p{period}"
             )
 
@@ -118,6 +128,18 @@ def build_planning_model(request: SupplyChainRequest) -> PlanningModel:
                 warehouse.storage_capacity,
                 {inventory[(warehouse.id, period)]: 1.0},
             )
+            if warehouse.outbound_capacity_per_period is not None:
+                add_row(
+                    f"outbound_capacity_{warehouse.id}_p{period}",
+                    "<=",
+                    warehouse.outbound_capacity_per_period,
+                    {
+                        variable: 1.0
+                        for variable in delivery_by_warehouse_period.get(
+                            (warehouse.id, period), []
+                        )
+                    },
+                )
             coefficients: Dict[pywraplp.Variable, float] = {
                 inventory[(warehouse.id, period)]: 1.0
             }
@@ -390,6 +412,12 @@ def solve_planning_model(request: SupplyChainRequest) -> SupplyChainResponse:
         diagnostics=[
             "Purchasing cost is charged once on supplier-to-warehouse dispatch quantity; it is not charged again on receipt or delivery.",
             "Warehouse storage capacity applies to ending inventory after same-period receipts and deliveries.",
+            "Warehouse outbound capacity is the sum of active assigned vehicle capacities, assuming at most one trip per active vehicle per period.",
+            (
+                "Quantities are integer crates for this run; no post-solve rounding is used."
+                if request.quantity_integrality == "integer"
+                else "Quantities remain continuous unless integer quantity mode is explicitly requested."
+            ),
             "Lead time is measured in positions of the supplied planning-period sequence. Dispatches arriving after the horizon are excluded.",
             "Infeasibility diagnostics describe the whole model only; they do not claim a unique root cause.",
         ],

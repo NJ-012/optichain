@@ -164,6 +164,20 @@ test('rejects a planning response whose objective does not reconcile with its co
   );
 });
 
+test('rejects a planning response whose cost components do not reconcile with its total', async () => {
+  globalThis.fetch = async () =>
+    jsonResponse({
+      ...tinyPlanningResponse,
+      objective_value: 11,
+      cost_breakdown: { ...tinyPlanningResponse.cost_breakdown, total: 11 },
+    });
+
+  await assert.rejects(
+    executeOptimization(tinyRequest, 'https://api.test'),
+    /cost breakdown components do not reconcile/,
+  );
+});
+
 test('reports routing API failures separately and preserves the LP result', async () => {
   globalThis.fetch = async (input) => {
     const url = String(input);

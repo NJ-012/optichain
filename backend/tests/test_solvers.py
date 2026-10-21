@@ -120,6 +120,20 @@ def test_vrp_vehicle_capacity_bounds(baseline_fixture):
         assert r.capacity_utilization_pct <= 100.1
 
 
+def test_vrp_uses_at_most_one_route_per_active_vehicle(baseline_fixture):
+    warehouse = baseline_fixture.warehouses[0]
+    routes = solve_last_mile_vrp(
+        period=1,
+        warehouse=warehouse,
+        demand_zones=baseline_fixture.demand_zones,
+        vehicles=baseline_fixture.vehicles[:2],
+        costs=baseline_fixture.cost_parameters,
+    )
+
+    assert len(routes) <= 2
+    assert {route.vehicle_id for route in routes} <= {"VEH-1", "VEH-2"}
+
+
 def test_vrp_preserves_fractional_planning_quantities():
     warehouse = Warehouse(
         id="W",
