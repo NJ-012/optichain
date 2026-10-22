@@ -38,11 +38,18 @@ test('charts use demand, routed output, solver costs, and supplier allocations',
 });
 
 test('CSV export includes the exact input, solver statuses, unserved units, and routes', () => {
-  const csv = buildRunCsv(tinyRequest, tinyResult);
+  const csv = buildRunCsv(tinyRequest, {
+    ...tinyResult,
+    diagnostics: {
+      ...tinyResult.diagnostics,
+      planning_shortage_breakdown: { D1_P1: 1 },
+    },
+  });
   assert.ok(csv.startsWith('\uFEFF"record_type"'));
   assert.ok(csv.includes('input_supplier'));
   assert.ok(csv.includes('overall=FEASIBLE;planning=OPTIMAL;routing=INCOMPLETE;routing_solver=FEASIBLE'));
   assert.ok(csv.includes('routing_unserved'));
+  assert.ok(csv.includes('lp_shortage'));
   assert.ok(csv.includes('lp_delivery'));
   assert.ok(csv.includes('vehicle_route_stop'));
 });

@@ -1,7 +1,7 @@
 import math
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Literal, Tuple
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 from models.schemas import Vehicle, DemandZone, Warehouse, RouteStop, VehicleRouteSolution, CostParameters
 
@@ -30,7 +30,8 @@ def solve_last_mile_vrp_with_status(
     warehouse: Warehouse,
     demand_zones: List[DemandZone],
     vehicles: List[Vehicle],
-    costs: CostParameters
+    costs: CostParameters,
+    quantity_integrality: Literal["continuous", "integer"] = "continuous",
 ) -> RoutingResult:
     """
     Solves Capacitated Vehicle Routing Problem (CVRP) for a single warehouse and period
@@ -59,13 +60,32 @@ def solve_last_mile_vrp_with_status(
             (time.perf_counter() - started) * 1000,
         )
 
+    if quantity_integrality == "integer":
+        integer_values = [
+            value
+            for zone in demand_zones
+            if zone.is_active
+            for value in [zone.demands.get(period, 0.0)]
+        ] + [vehicle.capacity for vehicle in active_vehicles]
+        if any(abs(value - round(value)) > 1e-9 for value in integer_values):
+            return RoutingResult(
+                "NO_SOLUTION",
+                "Integer routing requires whole-crate demand and vehicle capacities.",
+                [],
+                (time.perf_counter() - started) * 1000,
+            )
+
     # Node 0 is warehouse depot; Nodes 1..N are demand zones
     locations: List[Tuple[float, float, str, str, float]] = [
         (warehouse.lat, warehouse.lng, warehouse.id, warehouse.name, 0.0)
     ]
-    # Routing nodes are indivisible; small chunks approximate split deliveries without
-    # stranding payload when the LP allocation is spread across several demand zones.
-    delivery_chunk_capacity = min(vehicle.capacity for vehicle in active_vehicles) / 4.0
+    # Routing nodes are indivisible. Integer mode uses whole-crate chunks and an
+    # exact whole-crate remainder; continuous mode retains fractional quantities.
+    minimum_vehicle_capacity = min(vehicle.capacity for vehicle in active_vehicles)
+    if quantity_integrality == "integer":
+        delivery_chunk_capacity = max(1, math.floor(minimum_vehicle_capacity / 4))
+    else:
+        delivery_chunk_capacity = minimum_vehicle_capacity / 4.0
     for zone in served_zones:
         remaining_quantity = zone.demands.get(period, 0.0)
         while remaining_quantity > 1e-9:

@@ -141,6 +141,8 @@ export interface DiagnosticReport {
   binding_constraints: string[];
   bottlenecks: string[];
   unmet_demand_breakdown: Record<string, number>;
+  planning_shortage_breakdown: Record<string, number>;
+  routing_unserved_breakdown: Record<string, number>;
   recommendations: string[];
 }
 

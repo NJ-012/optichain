@@ -10,7 +10,7 @@ from models.schemas import (
 )
 from solver.transportation import solve_transportation
 from solver.inventory import solve_inventory_replenishment
-from solver.vrp import solve_last_mile_vrp
+from solver.vrp import solve_last_mile_vrp, solve_last_mile_vrp_with_status
 from solver.integrated import solve_integrated_supply_chain
 
 
@@ -178,6 +178,88 @@ def test_vrp_preserves_fractional_planning_quantities():
         for stop in route.stops
     ) == pytest.approx(0.12345678, abs=1e-7)
     assert all(route.total_quantity_delivered <= vehicle.capacity + 1e-6 for route in routes)
+
+
+def test_integer_vrp_uses_whole_crate_chunks_with_non_divisible_capacity():
+    warehouse = Warehouse(
+        id="W",
+        name="Warehouse",
+        max_storage_capacity=20,
+        initial_inventory=0,
+        holding_cost_per_unit_period=0,
+        lat=37.0,
+        lng=-122.0,
+    )
+    zones = [
+        DemandZone(
+            id="D1",
+            name="Store 1",
+            demands={1: 9},
+            lat=37.001,
+            lng=-122.001,
+        ),
+    ]
+    vehicle = Vehicle(
+        id="V",
+        name="Truck",
+        capacity=5,
+        fixed_cost=0,
+        variable_cost_per_km=1,
+        max_range_km=100,
+        assigned_driver="Driver",
+        warehouse_id="W",
+    )
+
+    result = solve_last_mile_vrp_with_status(
+        1, warehouse, zones, [vehicle], CostParameters(), "integer"
+    )
+
+    assert result.status == "FEASIBLE"
+    delivered = [
+        stop.quantity_delivered
+        for route in result.routes
+        for stop in route.stops
+        if stop.location_type == "demand_zone"
+    ]
+    assert sum(delivered) == pytest.approx(5)
+    assert all(quantity == round(quantity) for quantity in delivered)
+    assert all(route.total_quantity_delivered <= route.vehicle_capacity for route in result.routes)
+
+
+def test_integer_vrp_rejects_fractional_capacity_or_demand():
+    warehouse = Warehouse(
+        id="W",
+        name="Warehouse",
+        max_storage_capacity=20,
+        initial_inventory=0,
+        holding_cost_per_unit_period=0,
+        lat=37.0,
+        lng=-122.0,
+    )
+    zone = DemandZone(
+        id="D1",
+        name="Store",
+        demands={1: 2.5},
+        lat=37.001,
+        lng=-122.001,
+    )
+    vehicle = Vehicle(
+        id="V",
+        name="Truck",
+        capacity=5,
+        fixed_cost=0,
+        variable_cost_per_km=1,
+        max_range_km=100,
+        assigned_driver="Driver",
+        warehouse_id="W",
+    )
+
+    result = solve_last_mile_vrp_with_status(
+        1, warehouse, [zone], [vehicle], CostParameters(), "integer"
+    )
+
+    assert result.status == "NO_SOLUTION"
+    assert "whole-crate" in result.status_message
 
 
 def test_vrp_routes_feasible_subset_when_total_demand_exceeds_fleet_capacity():

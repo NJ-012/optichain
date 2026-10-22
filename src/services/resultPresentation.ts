@@ -136,6 +136,12 @@ export function buildRunCsv(request: OptimizationRequest, result: OptimizationRe
   for (const [key, quantity] of Object.entries(result.diagnostics.unmet_demand_breakdown)) {
     add(['unserved_demand', result.scenario_name, key.split('_P').at(-1), key.split('_P')[0], '', key, quantity, result.quantity_unit, '', result.currency_unit, result.routing_status, 'Demand not delivered on a vehicle route; includes LP shortage and routing shortfall.']);
   }
+  for (const [key, quantity] of Object.entries(result.diagnostics.planning_shortage_breakdown)) {
+    add(['lp_shortage', result.scenario_name, key.split('_P').at(-1), key.split('_P')[0], '', key, quantity, result.quantity_unit, '', result.currency_unit, result.planning_status, 'Demand left unmet by the LP; this quantity incurs the LP shortage penalty.']);
+  }
+  for (const [key, quantity] of Object.entries(result.diagnostics.routing_unserved_breakdown)) {
+    add(['routing_unserved', result.scenario_name, key.split('_P').at(-1), key.split('_P')[0], '', key, quantity, result.quantity_unit, '', result.currency_unit, result.routing_status, 'LP-planned quantity not delivered by a vehicle route.']);
+  }
   for (const route of result.vehicle_routes) {
     for (const stop of route.stops) {
       add(['vehicle_route_stop', result.scenario_name, route.period, route.vehicle_id, stop.location_id, `${route.vehicle_name} / ${stop.location_name}`, stop.quantity_delivered, result.quantity_unit, route.total_cost, result.currency_unit, result.routing_status, details({ sequence: stop.sequence, distance_km: stop.cumulative_distance_km, lat: stop.lat, lng: stop.lng, payload: route.total_quantity_delivered, capacity: route.vehicle_capacity, maximum_range_km: route.max_range_km })]);

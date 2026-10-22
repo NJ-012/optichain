@@ -41,7 +41,7 @@ test('reports LP-planned but unrouted units as unserved and keeps statuses separ
   assert.equal(result.total_cost, 13);
   assert.deepEqual(requestedUrls, [
     'http://test-api/api/v1/supply-chain/optimize',
-    'http://test-api/api/optimize/vrp?period=1',
+    'http://test-api/api/optimize/vrp?period=1&quantity_integrality=integer',
   ]);
 });
 
@@ -194,4 +194,41 @@ test('reports routing API failures separately and preserves the LP result', asyn
   assert.equal(result.routed_delivery_units, 0);
   assert.equal(result.unserved_units, 5);
   assert.ok(result.diagnostics.bottlenecks.some((message) => message.includes('routing service unavailable')));
+});
+
+test('serializes warehouse-period routing requests for the blocking routing service', async () => {
+  const request = structuredClone(tinyRequest);
+  request.periods = [1, 2];
+  request.warehouses.push({
+    ...request.warehouses[0],
+    id: 'W2',
+    name: 'Warehouse 2',
+  });
+  request.demand_zones[0].demands[2] = 5;
+
+  let routingRequestsInFlight = 0;
+  let maximumRoutingRequestsInFlight = 0;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes('/api/v1/supply-chain/optimize')) {
+      return jsonResponse({
+        ...tinyPlanningResponse,
+        warehouse_to_store_shipments: [
+          { warehouse_id: 'W1', store_id: 'D1', period: 1, quantity: 5 },
+          { warehouse_id: 'W2', store_id: 'D1', period: 2, quantity: 5 },
+        ],
+      });
+    }
+    routingRequestsInFlight += 1;
+    maximumRoutingRequestsInFlight = Math.max(
+      maximumRoutingRequestsInFlight,
+      routingRequestsInFlight,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    routingRequestsInFlight -= 1;
+    return jsonResponse(tinyPartialRoute);
+  };
+
+  await executeOptimization(request, 'http://test-api');
+  assert.equal(maximumRoutingRequestsInFlight, 1);
 });
