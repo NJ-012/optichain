@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import List
+from typing import List, Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from ortools import __version__ as ortools_version
@@ -303,7 +303,8 @@ def run_vrp_only(
     warehouse: Warehouse,
     demand_zones: List[DemandZone],
     vehicles: List[Vehicle],
-    costs: CostParameters = CostParameters()
+    costs: CostParameters = CostParameters(),
+    quantity_integrality: Literal["continuous", "integer"] = "continuous",
 ):
     """Route designated planned deliveries; routing is a separate post-planning CVRP."""
     result = solve_last_mile_vrp_with_status(
@@ -311,7 +312,8 @@ def run_vrp_only(
         warehouse=warehouse,
         demand_zones=demand_zones,
         vehicles=vehicles,
-        costs=costs
+        costs=costs,
+        quantity_integrality=quantity_integrality,
     )
     return {
         "period": period,

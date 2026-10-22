@@ -129,6 +129,8 @@ export const tinyResult: OptimizationResponse = {
     binding_constraints: [],
     bottlenecks: ['Routed 2 of 5 planned units.'],
     unmet_demand_breakdown: { D1_P1: 3 },
+    planning_shortage_breakdown: {},
+    routing_unserved_breakdown: { D1_P1: 3 },
     recommendations: [],
   },
   created_at: '2026-01-01T00:00:00Z',

@@ -253,7 +253,7 @@ export async function executeOptimization(
     const routeJobs = request.periods.flatMap((period) =>
       request.warehouses
         .filter((warehouse) => warehouse.is_active)
-        .map(async (warehouse) => {
+        .map((warehouse) => async () => {
           const deliveries = planning.warehouse_to_store_shipments.filter(
             (row) => row.warehouse_id === warehouse.id && row.period === period && row.quantity > FLOW_TOLERANCE,
           );
@@ -282,7 +282,7 @@ export async function executeOptimization(
           let noSolutionForJob = false;
           try {
             const response = await fetchJson<RoutingResponse>(
-              `${baseUrl}/api/optimize/vrp?period=${encodeURIComponent(period)}`,
+              `${baseUrl}/api/optimize/vrp?period=${encodeURIComponent(period)}&quantity_integrality=${encodeURIComponent(planningRequest.quantity_integrality)}`,
               {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -291,6 +291,7 @@ export async function executeOptimization(
                   demand_zones: demandZones,
                   vehicles,
                   costs: request.cost_parameters,
+                  quantity_integrality: planningRequest.quantity_integrality,
                 }),
               },
               configuredTimeout('VITE_API_ROUTING_TIMEOUT_MS', DEFAULT_ROUTING_TIMEOUT_MS),
@@ -360,7 +361,10 @@ export async function executeOptimization(
           }
         }),
     );
-    const routeResults = await Promise.all(routeJobs);
+    const routeResults = [];
+    for (const routeJob of routeJobs) {
+      routeResults.push(await routeJob());
+    }
     routes.push(...routeResults.flat());
   }
 
@@ -630,6 +634,41 @@ function mapPlanningResponse(
   const routingUnservedUnits = feasible
     ? Math.max(0, plannedDeliveryUnits - routedDeliveryUnits)
     : 0;
+  const planningShortageBreakdown = feasible
+    ? Object.fromEntries(
+        planning.unmet_demand
+          .filter((row) => row.unmet_quantity > FLOW_TOLERANCE)
+          .map((row) => [`${row.store_id}_P${row.period}`, row.unmet_quantity]),
+      )
+    : {};
+  const routedByStorePeriod = new Map<string, number>();
+  if (feasible) {
+    for (const route of routes) {
+      for (const stop of route.stops) {
+        if (stop.location_type !== 'demand_zone') continue;
+        const key = `${stop.location_id}_P${route.period}`;
+        routedByStorePeriod.set(
+          key,
+          (routedByStorePeriod.get(key) ?? 0) + stop.quantity_delivered,
+        );
+      }
+    }
+  }
+  const routingUnservedBreakdown = feasible
+    ? Object.fromEntries(
+        [...planning.warehouse_to_store_shipments
+          .reduce((totals, row) => {
+            const key = `${row.store_id}_P${row.period}`;
+            totals.set(key, (totals.get(key) ?? 0) + row.quantity);
+            return totals;
+          }, new Map<string, number>())]
+          .map(([key, quantity]) => [
+            key,
+            Math.max(0, quantity - (routedByStorePeriod.get(key) ?? 0)),
+          ] as const)
+          .filter(([, quantity]) => quantity > FLOW_TOLERANCE),
+      )
+    : {};
   const demandUnits = request.demand_zones
     .filter((zone) => zone.is_active)
     .reduce(
@@ -736,6 +775,8 @@ function mapPlanningResponse(
         : [],
       bottlenecks,
       unmet_demand_breakdown: Object.fromEntries(unmetDemand),
+      planning_shortage_breakdown: planningShortageBreakdown,
+      routing_unserved_breakdown: routingUnservedBreakdown,
       recommendations: diagnosticNotes,
     },
     created_at: new Date().toISOString(),
