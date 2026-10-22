@@ -4,8 +4,6 @@ import {
   BarChart,
   CartesianGrid,
   Legend,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -16,7 +14,6 @@ import { OptimizationRequest, OptimizationResponse } from '../types/domain';
 import {
   buildCostChartRows,
   buildDemandChartRows,
-  buildInventoryChartRows,
   buildRunCsv,
   buildSupplierChartRows,
 } from '../services/resultPresentation';
@@ -72,8 +69,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const feasible = response.objective_value != null;
   const activeDemand = request.demand_zones.filter((zone) => zone.is_active);
   const demandRows = buildDemandChartRows(request, response, selectedPeriod);
-  const inventoryRows = buildInventoryChartRows(request, response);
-  const warehouseNames = [...new Set(response.inventory_plans.map((row) => row.warehouse_name))];
   const supplierRows = buildSupplierChartRows(request, response, selectedPeriod);
   const fulfillmentRows = activeDemand.flatMap((zone) =>
     request.periods
@@ -202,22 +197,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <Bar dataKey="planned" name="LP planned" fill={COLORS[2]} />
                     <Bar dataKey="routed" name="Routed / delivered" fill={COLORS[0]} />
                   </BarChart>
-                </ResponsiveContainer>
-              )}
-            </ChartPanel>
-            <ChartPanel title="Inventory over time" subtitle={`Ending warehouse inventory (${response.quantity_unit})`}>
-              {inventoryRows.length === 0 ? <EmptyChart /> : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={inventoryRows}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="period" />
-                    <YAxis />
-                    <Tooltip formatter={(value) => quantity(Number(value))} />
-                    <Legend />
-                    {warehouseNames.map((name, index) => (
-                      <Line key={name} type="monotone" dataKey={name} stroke={COLORS[index % COLORS.length]} />
-                    ))}
-                  </LineChart>
                 </ResponsiveContainer>
               )}
             </ChartPanel>

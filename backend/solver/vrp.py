@@ -189,13 +189,28 @@ def solve_last_mile_vrp_with_status(
             * 100
         )
     )
-    for node in range(1, num_locations):
-        # Permit partial plans when payload or route-range constraints prevent serving every stop.
-        quantity_priority = max(1, int(round(locations[node][4] * 1000)))
-        routing.AddDisjunction(
-            [manager.NodeToIndex(node)],
-            (route_cost_bound_cents + 1) * quantity_priority,
+    def allow_partial_delivery() -> None:
+        for node in range(1, num_locations):
+            quantity_priority = max(1, int(round(locations[node][4] * 1000)))
+            routing.AddDisjunction(
+                [manager.NodeToIndex(node)],
+                (route_cost_bound_cents + 1) * quantity_priority,
+            )
+
+    total_planned_quantity = sum(loc[4] for loc in locations)
+    total_payload_capacity = sum(vehicle.capacity for vehicle in active_vehicles)
+    payload_can_fit = total_planned_quantity <= total_payload_capacity + 1e-9
+    range_can_fit = all(
+        any(
+            2 * compute_haversine(warehouse.lat, warehouse.lng, zone.lat, zone.lng)
+            <= vehicle.max_range_km + 1e-9
+            for vehicle in active_vehicles
         )
+        for zone in served_zones
+    )
+    full_route_may_fit = payload_can_fit and range_can_fit
+    if not full_route_may_fit:
+        allow_partial_delivery()
 
     # 5. Setting search parameters
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
