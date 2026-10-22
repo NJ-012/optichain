@@ -21,19 +21,6 @@ export function buildDemandChartRows(
     }));
 }
 
-export function buildInventoryChartRows(
-  request: OptimizationRequest,
-  response: OptimizationResponse,
-) {
-  return request.periods.map((period) => {
-    const balances = response.inventory_plans.filter((row) => row.period === period);
-    return {
-      period: `P${period}`,
-      ...Object.fromEntries(balances.map((row) => [row.warehouse_name, row.ending_inventory])),
-    };
-  });
-}
-
 export function buildSupplierChartRows(
   request: OptimizationRequest,
   response: OptimizationResponse,
